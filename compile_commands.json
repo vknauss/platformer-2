@@ -1,7 +1,0 @@
-[
-{
-  "directory": "C:/Users/vbk73/code/platformer-2/build/Debug",
-  "command": "C:\\msys64\\mingw64\\bin\\x86_64-w64-mingw32-g++.exe -DGLFW_DLL -DSHADERS_DIR=\\\"C:/Users/vbk73/code/platformer-2/src/shaders\\\" @CMakeFiles/platformer.dir/includes_CXX.rsp -g -o CMakeFiles\\platformer.dir\\src\\main.cpp.obj -c C:\\Users\\vbk73\\code\\platformer-2\\src\\main.cpp",
-  "file": "C:/Users/vbk73/code/platformer-2/src/main.cpp"
-}
-]
