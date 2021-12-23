@@ -440,6 +440,16 @@ void run(App& app) {
                 glUniform3fv(uColor, 1, vvm::v3f(0, 1, 0).data);
             }
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+            for (int i = 0; i < pair.num_contacts; ++i) {
+                glUniform3fv(uColor, 1, vvm::v3f(1, 0, 1).data);
+                auto model = vvm::translate(vvm::v3f(p, 0)) *
+                    vvm::m4f(vvm::m2f({pair.axis.y, -pair.axis.x}, pair.axis)) *
+                    vvm::scale(vvm::v3f{0.1, 0.1, 0});
+                auto mvp = viewProj * model;
+                glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            }
         }
 
         glfwSwapBuffers(app.window);
