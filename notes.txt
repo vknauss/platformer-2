@@ -1,0 +1,30 @@
+the combined view-proj matrix:
+    essentially we need to specify the size and location of the viewport in 
+    scene space. this can be done in a number of ways. for me i think the best
+    would be the location (x and y coordinates) of the center, along with a zoom
+    level and aspect ratio. this will avoid stretching along either axis and
+    decouple scene space from screen pixels, which is good practice and will
+    make game logic more stable (using a consistent coordinate system and
+    smaller numbers, etc)
+
+so how do we put this together?
+    the first thing to do is translate the viewport so the center of the
+    viewable space is at the origin. this is just a translation by the inverse
+    (negative) of the center of the viewport in scene space. then we need to
+    scale the space so the edges align with the ndc range (-1 to 1). So first
+    that's gonna mean computing the actual scene space size of the viewable
+    area. that's obviously gonna map from the zoom level according to some
+    function, the easiest way being just a direct linear scaling along one of
+    the axes. so let's just say the "zoom axis" is the x axis. this is gonna
+    mean 
+
+the equations:
+x = (x - offset.x) * zoom / aspect
+y = (y - offset.y) * zoom
+z = z
+
+now as a mat4 (homogeneous coords, column major, so maybe backwards lol)
+[[zoom / aspect,               0,                 0, 0]
+ [0,                           zoom,              0, 0]
+ [0,                           0,                 1, 0]
+ [ -offset.x * zoom / aspect,  -offset.y * zoom,  0, 1]]
