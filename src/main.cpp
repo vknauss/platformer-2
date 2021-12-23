@@ -395,7 +395,7 @@ void run(App& app) {
             glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
-        
+
         for (const auto& pair : collision_world.pairs) {
             using fid = physics::collision_world::intersecting_pair::feature_id;
             vvm::v2f p;
@@ -443,6 +443,7 @@ void run(App& app) {
 
             for (int i = 0; i < pair.num_contacts; ++i) {
                 glUniform3fv(uColor, 1, vvm::v3f(1, 0, 1).data);
+                p = collision_world.contacts[pair.contact_ids[i]].position;
                 auto model = vvm::translate(vvm::v3f(p, 0)) *
                     vvm::m4f(vvm::m2f({pair.axis.y, -pair.axis.x}, pair.axis)) *
                     vvm::scale(vvm::v3f{0.1, 0.1, 0});

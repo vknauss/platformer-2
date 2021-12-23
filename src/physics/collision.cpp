@@ -158,11 +158,15 @@ static bool find_axis(collision_world::intersecting_pair& pair, const collision_
     // first, imagine we rotate the space into the local frame of b0, such that b0's x (for instance) is the same as global x
     // then the projection of b1 onto b0's x is just the x components of the aabb of b1
 
+    auto i0 = pair.b0, i1 = pair.b1;
+
     const transform& t0 = world.transforms[pair.b0];
     const transform& t1 = world.transforms[pair.b1];
 
-    const collision_shape& s0 = world.collision_shapes[world.shape_ids[pair.b0]];
-    const collision_shape& s1 = world.collision_shapes[world.shape_ids[pair.b1]];
+    auto si0 = world.shape_ids[i0], si1 = world.shape_ids[i1];
+
+    const collision_shape& s0 = world.collision_shapes[si0];
+    const collision_shape& s1 = world.collision_shapes[si1];
 
     m2 r0 = vvm::rotate(t0.angle);  // rotation matrices,
     m2 r1 = vvm::rotate(t1.angle);  // transform points from body space to world space (minus a translation)
@@ -269,7 +273,7 @@ static collision_world::intersecting_pair::feature_id find_incident(const collis
         m2 r1 = vvm::rotate(t1.angle);
         real_t d0 = vvm::dot(r1[0], pair.axis), d1 = vvm::dot(r1[1], pair.axis);
         if (std::abs(d0) > std::abs(d1)) {
-            // indcident face is +/- x
+            // incident face is +/- x
             // d0 > 0 means the vector from b0 to b1 is more or less in b1's x axis
             // so b1 is to the right of b0, so the incident face is left (negative x)
             incident =  d0 > 0 ? fid::b1_neg_x : fid::b1_pos_x;
@@ -281,12 +285,9 @@ static collision_world::intersecting_pair::feature_id find_incident(const collis
         m2 r0 = vvm::rotate(t0.angle);
         real_t d0 = vvm::dot(r0[0], pair.axis), d1 = vvm::dot(r0[1], pair.axis);
         if (std::abs(d0) > std::abs(d1)) {
-            // indcident face is +/- x
-            // d0 > 0 means the vector from b0 to b1 is more or less in b0's x axis
-            // so b0 is to the left of b1, so the incident face is right (positive x)
-            incident =  d0 > 0 ? fid::b0_pos_x : fid::b0_neg_x;
+            incident =  d0 > 0 ? fid::b0_neg_x : fid::b0_pos_x;
         } else {
-            incident = d1 > 0 ? fid::b0_pos_y : fid::b0_neg_y;
+            incident = d1 > 0 ? fid::b0_neg_y : fid::b0_pos_y;
         }
     }
 
@@ -308,30 +309,53 @@ a_couple_points edge_points(collision_world::intersecting_pair::feature_id f, co
     const auto& t0 = world.transforms[pair.b0];
     const auto& t1 = world.transforms[pair.b1];
 
-    m2 ar0 = vvm::abs(vvm::rotate(t0.angle));
-    m2 ar1 = vvm::abs(vvm::rotate(t1.angle));
+    m2 r0 = vvm::rotate(t0.angle);
+    m2 r1 = vvm::rotate(t1.angle);
 
-    v2 e0 = ar0 * s0.extents;
-    v2 e1 = ar1 * s1.extents;
+    const v2& e0 = s0.extents;
+    const v2& e1 = s1.extents;
 
     switch (f) {
     case fid::b0_neg_x:
-        return {{ t0.position - e0, t0.position + v2(-e0.x, e0.y) }, 2};
+        return {
+            { t0.position + r0 * v2(-e0.x, -e0.y), 
+              t0.position + r0 * v2(-e0.x,  e0.y)
+            }, 2};
     case fid::b0_neg_y:
-        return {{ t0.position - e0, t0.position + v2(e0.x, -e0.y) }, 2};
+        return {
+            { t0.position + r0 * v2(-e0.x, -e0.y), 
+              t0.position + r0 * v2( e0.x, -e0.y)
+            }, 2};
     case fid::b0_pos_x:
-        return {{ t0.position + v2(e0.x, -e0.y), t0.position + e0 }, 2};
+        return {
+            { t0.position + r0 * v2( e0.x, -e0.y), 
+              t0.position + r0 * v2( e0.x,  e0.y)
+            }, 2};
     case fid::b0_pos_y:
-        return {{ t0.position + v2(-e0.x, e0.y), t0.position + e0 }, 2};
-    
+        return {
+            { t0.position + r0 * v2(-e0.x,  e0.y), 
+              t0.position + r0 * v2( e0.x,  e0.y)
+            }, 2};
     case fid::b1_neg_x:
-        return {{ t1.position - e1, t1.position + v2(-e1.x, e1.y) }, 2};
+        return {
+            { t1.position + r1 * v2(-e1.x, -e1.y), 
+              t1.position + r1 * v2(-e1.x,  e1.y)
+            }, 2};
     case fid::b1_neg_y:
-        return {{ t1.position - e1, t1.position + v2(e1.x, -e1.y) }, 2};
+        return {
+            { t1.position + r1 * v2(-e1.x, -e1.y), 
+              t1.position + r1 * v2( e1.x, -e1.y)
+            }, 2};
     case fid::b1_pos_x:
-        return {{ t1.position + v2(e1.x, -e1.y), t1.position + e1 }, 2};
+        return {
+            { t1.position + r1 * v2( e1.x, -e1.y), 
+              t1.position + r1 * v2( e1.x,  e1.y)
+            }, 2};
     case fid::b1_pos_y:
-        return {{ t1.position + v2(-e1.x, e1.y), t1.position + e1 }, 2};
+        return {
+            { t1.position + r1 * v2(-e1.x,  e1.y), 
+              t1.position + r1 * v2( e1.x,  e1.y)
+            }, 2};
     }
     return {{}, 0};
 }
@@ -344,8 +368,7 @@ a_couple_points clip_points(const a_couple_points& in_points, const v2& tangent_
         d[i] = vvm::dot(tangent_axis, in_points.points[i]);
         out_side[i] = d[i] > max ? 1 : (d[i] < min ? -1 : 0);
     }
-    if (in_points.num_points > 1 && out_side[0] != out_side[1]) {
-        int mini = d[1] < d[0];
+    if (in_points.num_points > 1 && out_side[0] * out_side[1] != 1) {
         for (int i = 0; i < in_points.num_points; ++i) {
             out_points.points[i] = in_points.points[i];
             if (out_side[i] == -1) {
@@ -362,6 +385,13 @@ a_couple_points clip_points(const a_couple_points& in_points, const v2& tangent_
     if (in_points.num_points == 1 && out_side[0] == 0) {
         out_points.points[0] = in_points.points[0];
         out_points.num_points = 1;
+    }
+    if (out_points.num_points == 0) {
+        std::cout << "all points clipped" << std::endl;
+        std::cout << "d: {" << d[0] << ", " << d[1] << "}" << std::endl;
+        std::cout << "min: " << min << ", max: " << max << std::endl;
+        std::cout << "in_points: { {" << in_points.points[0].x << ", " << in_points.points[0].y << "}, {" <<
+            in_points.points[1].x << ", " << in_points.points[1].y << "} }" << std::endl;
     }
     return out_points;
 }
@@ -414,18 +444,20 @@ static int find_contact_points(collision_world::contact c[2], const collision_wo
     int num_out = 0;
     for (int i = 0; i < clipped.num_points; ++i) {
         
-        c[++num_out].position = clipped.points[i];
+        c[num_out++].position = clipped.points[i];
     }
     return num_out;
 }
 
 void collision_world::find_contacts() {
     // use the intersecting pairs to find contacts
+    contacts.clear();
     for (auto& pair : pairs) {
         if (find_axis(pair, *this)) {
             contact c[2];
             pair.num_contacts = find_contact_points(c, pair, *this);
             for (int i = 0; i < pair.num_contacts; ++i) {
+                pair.contact_ids[i] = (id_t) contacts.size();
                 contacts.push_back(c[i]);
             }
         }
