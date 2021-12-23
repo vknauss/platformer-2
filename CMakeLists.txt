@@ -10,6 +10,7 @@ add_executable(platformer "")
 add_subdirectory(src)
 
 target_link_libraries(platformer PUBLIC
+    debug asan
     OpenGL::GL
     GLEW::GLEW
     glfw)
