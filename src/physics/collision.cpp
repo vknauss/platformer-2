@@ -492,6 +492,12 @@ void collision_world::find_contacts() {
     }
 }
 
+id_t collision_world::add_collision_object(const transform& tfm, id_t shape_id) {
+    id_t id = num_bodies++;
+    transforms.push_back(tfm);
+    shape_ids.push_back(shape_id);
+    return id;
+}
 
 collision_world::collision_world() :
     num_bodies(0) {

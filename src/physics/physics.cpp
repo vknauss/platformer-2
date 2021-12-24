@@ -1,87 +1,91 @@
 #include "physics.h"
 
 #include <cmath>
+#include <iostream>
 
 #include <vvm/matrix_tfm.hpp>
 
 namespace physics {
 
-
-
-// struct separating_axis_data {
-//     rigid_body* b0, * b1;
-//     v2 normal;
-//     float separation;
-//     bool contact;
-// };
-
-// separating_axis_data compute_separating_axis(rigid_body* b0, rigid_body* b1) {
-//     // very sorta borrowed from Erin Catto's Box2D Lite collision code
-//     // https://github.com/erincatto/box2d-lite
+void dynamics_world::step(real_t dt, int iterations) {
+    find_intersecting_pairs();
+    find_contacts();
     
-//     separating_axis_data result;
-//     result.b0 = b0;
-//     result.b1 = b1;
-//     result.contact = false;
+    if (imasses.size() < num_bodies) {
+        imasses.resize(num_bodies, 0);
+        iinertias.resize(num_bodies, 0);
+        velocities.resize(num_bodies, {.linear = {0, 0}, .angular = 0});
+    }
 
-//     v2 d = b1->state.position - b1->state.position;  // the separation between the centers
+    for (auto i = 0u; i < num_bodies; ++i) {
+        if (imasses[i] > 0)
+            velocities[i].linear += v2(0, -9.8) * dt;
+    }
+
+    for (int iterc = 0; iterc < iterations; ++iterc) {
+        for (const auto& pair : pairs) {
+            real_t sim = imasses[pair.b0] + imasses[pair.b1];
+            if (sim == 0.0) continue;
+
+            const auto& t0 = transforms[pair.b0];
+            const auto& t1 = transforms[pair.b1];
+            auto& v0 = velocities[pair.b0];
+            auto& v1 = velocities[pair.b1];
+
+            real_t im0 = imasses[pair.b0], im1 = imasses[pair.b1];
+            real_t ii0 = iinertias[pair.b0], ii1 = iinertias[pair.b1];
+            const auto& n = pair.axis;
+
+            for (int i = 0; i < pair.num_contacts; ++i) {
+                const auto& c = contacts[pair.contact_ids[i]];
+
+                v2 r0 = c.position - t0.position, r1 = c.position - t1.position;
+                auto r0xn = vvm::cross(r0, n), r1xn = vvm::cross(r1, n);
+
+                v2 pv0 = v0.linear + vvm::cross(v0.angular, r0);
+                v2 pv1 = v1.linear + vvm::cross(v1.angular, r1);
+
+                v2 dv = pv1 - pv0;
+                real_t denom = sim + vvm::dot(n, ii0 * vvm::cross(r0xn, r0) + ii1 * vvm::cross(r1xn, r1));
+
+                real_t impulse = -vvm::dot(n, dv) / denom;
+                if (impulse > 0) {
+                    v0.linear -= im0 * impulse * n;
+                    v0.angular -= ii0 * impulse * r0xn;
+                    v1.linear += im1 * impulse * n;
+                    v1.angular += ii1 * impulse * r1xn;
+                }
+            }
+        }
+    }
     
-//     m2 r0 = vvm::rotate(b0->state.angle), r1 = vvm::rotate(b1->state.angle);  // the 2d rotation matrices of the 2 bodies
-//     m2 r0T = vvm::transpose(r0), r1T = vvm::transpose(r1);  // the transposes (=inverse) of the previous, used for world-to-body space transform
+    for (auto i = 0u; i < num_bodies; ++i) {
+        transforms[i].position += velocities[i].linear * dt;
+        transforms[i].angle += velocities[i].angular * dt;
+    }
+}
 
-//     v2 d0 = r0T * d, d1 = r1T * d;  // the separation vector transformed to the rotational frames of the 2 bodies
+id_t dynamics_world::add_rigid_body(real_t mass, const transform& tfm, id_t shape_id) {
+    auto id = add_collision_object(tfm, shape_id);
+    real_t imass = mass > 0 ? 1.0 / mass : 0.0;
+    const auto& e = collision_shapes[shape_ids[id]].extents;
+    auto dd = vvm::dot(e, e);
+    real_t iinertia = dd > 0 ? 3.0 * imass / dd : 0.0;
+    if (imasses.size() < id) {
+        imasses.resize(num_bodies, 0);
+        iinertias.resize(num_bodies, 0);
+        velocities.resize(num_bodies, {.linear = {0, 0}, .angular = 0});
+        imasses[id] = imass;
+        iinertias[id] = iinertia;
+    } else {
+        imasses.push_back(imass);
+        iinertias.push_back(iinertia);
+        velocities.push_back({.linear = {0, 0}, .angular = 0});
+    }
+    return id;
+}
 
-//     m2 r0to1 = r0T * r1;  // rotation of body 1 relative to body 0
-//     m2 ar01 = vvm::abs(r0to1);  // absolute value of above, used to compute separation (see biig comment in the aabb function above)
-//     m2 ar10 = vvm::transpose(ar01);  // the transpose of above gives the version for body 0 relative to 1
-
-//     // the separations between nearest faces relative to body 0 and 1, respectively
-//     // this is the exact same formula used in box2d lite. knowing how the absolute value works make it sorta make sense lmao
-//     // just subtracting the distance from the centers of each body to their edges from the distance vector, but all in body-space
-//     v2 s0 = vvm::abs(d0) - b0->shape->extents - ar01 * b1->shape->extents,
-//        s1 = vvm::abs(d1) - b1->shape->extents - ar10 * b0->shape->extents;
-    
-//     // for the above, positive separation means the bodies aren't colliding
-//     if (s0.x <= 0 && s0.y <= 0 && s1.x <= 0 && s1.y <= 0) {
-//         result.contact = true;
-//         // now the separating axis theorem part, find minimum depth among any of the axes
-//         // since all the separations are negative, the minimum depth (closest to 0) is actually the max separation
-//         // box2d lite has some biasing used to improve coherence. i'm gonna ignore that for now.
-        
-//         result.normal = d0.x > 0 ? r0[0] : -r0[0];
-//         result.separation = s0.x;
-
-//         if (s0.y > result.separation) {
-//             result.normal = d0.y > 0 ? r0[1] : -r0[1];
-//             result.separation = s0.y;
-//         }
-
-//         if (s1.x > result.separation) {
-//             result.normal = d1.x > 0 ? r1[0] : -r1[0];
-//             result.separation = s1.x;
-//         }
-
-//         if (s1.y > result.separation) {
-//             result.normal = d1.y > 0 ? r1[1] : -r1[1];
-//             result.separation = s1.y;
-//         }
-//     }
-    
-//     return result;
-// }
-
-// contact_manifold compute_contact(rigid_body* b0, rigid_body* b1) {
-//    contact_manifold result;
-//    result.b0 = b0;
-//    result.b1 = b1;
-//    result.num_points = 0;
-
-//    auto sat = compute_separating_axis(b0, b1);
-//    if (sat.contact) {
-
-//    }
-
-//    return result;
-// }
+dynamics_world::dynamics_world() { }
+dynamics_world::~dynamics_world() { }
 
 };  // namespace physics

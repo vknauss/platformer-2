@@ -267,17 +267,16 @@ void run(App& app) {
     auto uMVP = glGetUniformLocation(program, "mvp");
     auto uColor = glGetUniformLocation(program, "color");
 
-    physics::collision_world collision_world;
+    physics::dynamics_world pworld;
 
-    collision_world.collision_shapes.push_back({.extents = {1, 1}});
+    pworld.collision_shapes.push_back({.extents = {1, 1}});
+    pworld.collision_shapes.push_back({.extents = {10, 1}});
 
-    collision_world.transforms.push_back({.position = {0, 0}, .angle = 0});
-    collision_world.shape_ids.push_back(0);
-    collision_world.num_bodies = 1;
-
-    collision_world.transforms.push_back({.position = {5, 0}, .angle = 1.2});
-    collision_world.shape_ids.push_back(0);
-    ++collision_world.num_bodies;
+    auto player_id = pworld.add_rigid_body(0, {.position = {0, 0}, .angle = 0}, 0);
+    pworld.add_rigid_body(1, {.position = {5, 0}, .angle = 1.2}, 0);
+    pworld.add_rigid_body(1, {.position = {5, 2.5}, .angle = 1.2}, 0);
+    pworld.add_rigid_body(1, {.position = {5, 5.0}, .angle = 1.2}, 0);
+    pworld.add_collision_object({.position = {0, -4}, .angle = 0.0}, 1);
 
     glUseProgram(program);
 
@@ -310,10 +309,11 @@ void run(App& app) {
             move_dir.x += 1;
         }
         if (vvm::dot(move_dir, move_dir) > 0)
-            collision_world.transforms[0].position += vvm::normalize(move_dir) * dt * 5.0f;
+            pworld.velocities[player_id].linear = vvm::normalize(move_dir) * 5.0f;
+        else
+            pworld.velocities[player_id].linear = {0, 0};
 
-        collision_world.find_intersecting_pairs();
-        collision_world.find_contacts();
+        pworld.step(dt, 4);
 
         // for (int i = 0; i < n_bodies; ++i) {
         //     bodies[i].velocity += gravity * dt;
@@ -353,19 +353,19 @@ void run(App& app) {
             glDrawArrays(GL_LINES, 0, 2);
         };
         
-        for (int i = 0; i < collision_world.num_bodies; ++i) {
-            const auto& t = collision_world.transforms[i];
-            const auto& s = collision_world.collision_shapes[collision_world.shape_ids[i]];
+        for (int i = 0; i < pworld.num_bodies; ++i) {
+            const auto& t = pworld.transforms[i];
+            const auto& s = pworld.collision_shapes[pworld.shape_ids[i]];
             drawQuad(2.0f * s.extents, t.position, t.angle, {1, 1, 1});
         }
 
-        for (const auto& pair : collision_world.pairs) {
+        for (const auto& pair : pworld.pairs) {
             using fid = physics::collision_world::intersecting_pair::feature_id;
             
-            const auto& t0 = collision_world.transforms[pair.b0];
-            const auto& t1 = collision_world.transforms[pair.b1];
-            const auto& s0 = collision_world.collision_shapes[collision_world.shape_ids[pair.b0]];
-            const auto& s1 = collision_world.collision_shapes[collision_world.shape_ids[pair.b1]];
+            const auto& t0 = pworld.transforms[pair.b0];
+            const auto& t1 = pworld.transforms[pair.b1];
+            const auto& s0 = pworld.collision_shapes[pworld.shape_ids[pair.b0]];
+            const auto& s1 = pworld.collision_shapes[pworld.shape_ids[pair.b1]];
             
             vvm::v2f p1, p2;
             switch (pair.feature) {
@@ -395,7 +395,7 @@ void run(App& app) {
             drawLine(p1, p2, color);
 
             for (int i = 0; i < pair.num_contacts; ++i) {
-                auto p = collision_world.contacts[pair.contact_ids[i]].position;
+                auto p = pworld.contacts[pair.contact_ids[i]].position;
                 drawSolidQuad({0.1, 0.1}, p, 0, {1, 0, 1});
             }
         }

@@ -73,6 +73,8 @@ struct collision_world {
 
     // methods
 
+    id_t add_collision_object(const transform& tfm, id_t shape_id);
+
     // broad phase, only test aabbs, use spatial data
     void find_intersecting_pairs();
 
@@ -82,7 +84,23 @@ struct collision_world {
     // ctrs/dtrs
     
     collision_world();
-    ~collision_world();
+    virtual ~collision_world();
+
+};
+
+struct dynamics_world : collision_world {
+
+    // more body data
+    std::vector<velocity> velocities;
+    std::vector<real_t> imasses;
+    std::vector<real_t> iinertias;
+    
+    id_t add_rigid_body(real_t mass, const transform& tfm, id_t shape_id);
+
+    void step(real_t dt, int iterations);
+
+    dynamics_world();
+    virtual ~dynamics_world();
 
 };
 
