@@ -234,88 +234,33 @@ void destroyEntity(entity e, ecs& ecs) {
     }
 }
 
-// physics
-
-// struct body {
-//     vvm::v2f position;
-//     vvm::v2f velocity;
-//     vvm::v2f size;
-//     bool dynamic;
-// };
-
-
-// struct physics_world {
-//     packed_array<body, 256, MAX_ENTITIES> bodies;
-//     vvm::v2f gravity;
-
-//     struct overlapping_pair_entry {
-//         unsigned int b0, b1;
-//     };
-//     std::vector<overlapping_pair_entry> overlappingPairs;
-
-//     physics_world() : gravity(0, -9.8f) { }
-
-//     void calcOverlappingPairs() {
-//         std::vector<unsigned int> indices(bodies.numElements);
-//         std::iota(indices.begin(), indices.end(), 0);
-//         std::sort(indices.begin(), indices.end(), [this] (auto i0, auto i1) {
-//             return bodies.data[i0].position.x < bodies.data[i1].position.x;
-//         });
-
-//         overlappingPairs.clear();
-        
-//         std::vector<unsigned int> activeIntervals;
-//         for (auto i = 0u; i < indices.size(); ++i) {
-//             auto i0 = indices[i];
-//             float w = bodies.data[i0].position.x;
-//             auto numActiveIntervals = 0u;
-//             for (auto j = 0u; j < activeIntervals.size(); ++j) {
-//                 auto i1 = activeIntervals[j];
-//                 if (w > bodies.data[i1].position.x + bodies.data[i1].size.x) {
-                    
-//                     activeIntervals[numActiveIntervals++] = activeIntervals[j];
-//                 }
-//             }
-//         }
-
-        
-//         auto numOverlappingPairs = overlappingPairs.size();
-
-
-
-
-//         for (int i = overlappingPairs.size() - 1; i >= 0; --i) {
-//             auto& p = overlappingPairs[i];
-//             const auto& b0 = bodies.data[p.b0];
-//             const auto& b1 = bodies.data[p.b1];
-//             if (b0.position.x > b1.position.x + b1.size.x ||
-//                 b0.position.x + b0.size.x < b1.position.x ||
-//                 b0.position.y > b1.position.y + b1.size.y ||
-//                 b0.position.y + b0.size.y < b1.position.y)
-//             {
-//                 --numOverlappingPairs;
-//                 overlappingPairs[i] = overlappingPairs[numOverlappingPairs];
-//             }
-//         }
-
-//     }
-
-//     void tick(float dt) {
-//         for (auto i = 0u; i < dynamicBodies.numElements; ++i) {
-//             auto& b = dynamicBodies.data[i];
-//             b.velocity += gravity * dt;
-//             b.position += b.velocity * dt;
-//         }
-//     }
-
-// };
-
-
 void run(App& app) {
 
     GLuint vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
+
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, 10 * sizeof(vvm::v2f), nullptr, GL_STATIC_DRAW);
+    {
+        void* ptr = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+        vvm::v2f* vptr = (vvm::v2f*) ptr;
+        *(vptr++) = {-0.5, -0.5};
+        *(vptr++) = { 0.5, -0.5};
+        *(vptr++) = {-0.5,  0.5};
+        *(vptr++) = { 0.5,  0.5};
+        *(vptr++) = {-0.5, -0.5};
+        *(vptr++) = {-0.5,  0.5};
+        *(vptr++) = { 0.5, -0.5};
+        *(vptr++) = { 0.5,  0.5};
+        *(vptr++) = { 0.0,  0.0};
+        *(vptr++) = { 0.5,  0.0};
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
 
     GLuint program = createShaderProgram("vert.glsl", "frag.glsl");
 
@@ -383,73 +328,75 @@ void run(App& app) {
         glViewport(0, 0, width, height);
 
         glClear(GL_COLOR_BUFFER_BIT);
+
+        static const auto setUniforms = [&] (const vvm::m4f& m, const vvm::v3f color) {
+            auto mvp = viewProj * m;
+            glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
+            glUniform3fv(uColor, 1, color.data);
+        };
+
+        static const auto drawQuad = [&] (const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
+            auto model = vvm::translate(pos) * vvm::m4f(vvm::rotate(angle)) * vvm::scale(vvm::v3f(size, 0));
+            setUniforms(model, color);
+            glDrawArrays(GL_LINES, 0, 10);
+        };
+
+        static const auto drawSolidQuad = [&] (const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
+            auto model = vvm::translate(pos) * vvm::m4f(vvm::rotate(angle)) * vvm::scale(vvm::v3f(size, 0));
+            setUniforms(model, color);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        };
+
+        static const auto drawLine = [&] (const vvm::v2f& p0, const vvm::v2f& p1, const vvm::v3f& color) {
+            auto model = vvm::translate(p0) * vvm::m4f(vvm::m2f(p1 - p0, {0, 0})) * vvm::translate(vvm::v2f{0.5, 0.5});
+            setUniforms(model, color);
+            glDrawArrays(GL_LINES, 0, 2);
+        };
         
-        glUniform3fv(uColor, 1, vvm::v3f(1).data);
         for (int i = 0; i < collision_world.num_bodies; ++i) {
             const auto& t = collision_world.transforms[i];
             const auto& s = collision_world.collision_shapes[collision_world.shape_ids[i]];
-            auto model = vvm::translate(vvm::v3f(t.position, 0)) *
-                vvm::m4f(vvm::rotate(t.angle)) *
-                vvm::scale(vvm::v3f(collision_world.collision_shapes[collision_world.shape_ids[i]].extents * 2.0f, 0));
-            auto mvp = viewProj * model;
-            glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            drawQuad(2.0f * s.extents, t.position, t.angle, {1, 1, 1});
         }
 
         for (const auto& pair : collision_world.pairs) {
             using fid = physics::collision_world::intersecting_pair::feature_id;
-            vvm::v2f p;
+            
             const auto& t0 = collision_world.transforms[pair.b0];
             const auto& t1 = collision_world.transforms[pair.b1];
             const auto& s0 = collision_world.collision_shapes[collision_world.shape_ids[pair.b0]];
             const auto& s1 = collision_world.collision_shapes[collision_world.shape_ids[pair.b1]];
+            
+            vvm::v2f p1, p2;
             switch (pair.feature) {
             case fid::b0_pos_x:
-                p = t0.position + vvm::rotate(t0.angle) * vvm::v2f(s0.extents.x + 0.5, 0);
-                break;
             case fid::b0_neg_x:
-                p = t0.position + vvm::rotate(t0.angle) * vvm::v2f(-s0.extents.x - 0.5, 0);
+                p1 = t0.position + pair.axis * s0.extents.x;
+                p2 = p1 + pair.axis;
                 break;
             case fid::b0_pos_y:
-                p = t0.position + vvm::rotate(t0.angle) * vvm::v2f(0, s0.extents.y + 0.5);
-                break;
             case fid::b0_neg_y:
-                p = t0.position + vvm::rotate(t0.angle) * vvm::v2f(0, -s0.extents.y - 0.5);
+                p1 = t0.position + pair.axis * s0.extents.y;
+                p2 = p1 + pair.axis;
                 break;
             case fid::b1_pos_x:
-                p = t1.position + vvm::rotate(t1.angle) * vvm::v2f(s1.extents.x + 0.5, 0);
-                break;
             case fid::b1_neg_x:
-                p = t1.position + vvm::rotate(t1.angle) * vvm::v2f(-s1.extents.x - 0.5, 0);
+                p1 = t1.position - pair.axis * s1.extents.x;
+                p2 = p1 - pair.axis;
                 break;
             case fid::b1_pos_y:
-                p = t1.position + vvm::rotate(t1.angle) * vvm::v2f(0, s1.extents.y + 0.5);
-                break;
             case fid::b1_neg_y:
-                p = t1.position + vvm::rotate(t1.angle) * vvm::v2f(0, -s1.extents.y - 0.5);
+                p1 = t1.position - pair.axis * s1.extents.y;
+                p2 = p1 - pair.axis;
                 break;
             }
-            auto model = vvm::translate(vvm::v3f(p, 0)) *
-                vvm::m4f(vvm::m2f({pair.axis.y, -pair.axis.x}, pair.axis)) *
-                vvm::scale(vvm::v3f{0.1, 1, 0});
-            auto mvp = viewProj * model;
-            glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
-            if (pair.num_contacts > 0) {    
-                glUniform3fv(uColor, 1, vvm::v3f(1, 0, 0).data);
-            } else {
-                glUniform3fv(uColor, 1, vvm::v3f(0, 1, 0).data);
-            }
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+            auto color = pair.num_contacts > 0 ? vvm::v3f(1, 0, 0) : vvm::v3f(0, 1, 0);
+            drawLine(p1, p2, color);
 
             for (int i = 0; i < pair.num_contacts; ++i) {
-                glUniform3fv(uColor, 1, vvm::v3f(1, 0, 1).data);
-                p = collision_world.contacts[pair.contact_ids[i]].position;
-                auto model = vvm::translate(vvm::v3f(p, 0)) *
-                    vvm::m4f(vvm::m2f({pair.axis.y, -pair.axis.x}, pair.axis)) *
-                    vvm::scale(vvm::v3f{0.1, 0.1, 0});
-                auto mvp = viewProj * model;
-                glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                auto p = collision_world.contacts[pair.contact_ids[i]].position;
+                drawSolidQuad({0.1, 0.1}, p, 0, {1, 0, 1});
             }
         }
 

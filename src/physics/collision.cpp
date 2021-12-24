@@ -223,10 +223,10 @@ static bool find_axis(collision_world::intersecting_pair& pair, const collision_
     if (depth > min_depth) {
         min_depth = depth;
         pair.axis = -r1[0];
-        pair.feature = fid::b1_neg_x;  // inverted since d points from 0 to 1
-        if (d1.x < 0) {
+        pair.feature = fid::b1_pos_x;  // inverted since d points from 0 to 1
+        if (d1.x > 0) {
             pair.axis = -pair.axis;
-            pair.feature = fid::b1_pos_x;
+            pair.feature = fid::b1_neg_x;
         }
         pair.offset = vvm::dot(pair.axis, t1.position) - s1.extents.x;
         if (depth > 0) return false;
@@ -237,10 +237,10 @@ static bool find_axis(collision_world::intersecting_pair& pair, const collision_
     if (depth > min_depth) {
         min_depth = depth;
         pair.axis = -r1[1];
-        pair.feature = fid::b1_neg_y;  // inverted since d points from 0 to 1
-        if (d1.y < 0) {
+        pair.feature = fid::b1_pos_y;  // inverted since d points from 0 to 1
+        if (d1.y > 0) {
             pair.axis = -pair.axis;
-            pair.feature = fid::b1_pos_y;
+            pair.feature = fid::b1_neg_y;
         }
         pair.offset = vvm::dot(pair.axis, t1.position) - s1.extents.y;
         if (depth > 0) return false;
@@ -285,9 +285,9 @@ static collision_world::intersecting_pair::feature_id find_incident(const collis
         m2 r0 = vvm::rotate(t0.angle);
         real_t d0 = vvm::dot(r0[0], pair.axis), d1 = vvm::dot(r0[1], pair.axis);
         if (std::abs(d0) > std::abs(d1)) {
-            incident =  d0 > 0 ? fid::b0_neg_x : fid::b0_pos_x;
+            incident =  d0 > 0 ? fid::b0_pos_x : fid::b0_neg_x;
         } else {
-            incident = d1 > 0 ? fid::b0_neg_y : fid::b0_pos_y;
+            incident = d1 > 0 ? fid::b0_pos_y : fid::b0_neg_y;
         }
     }
 
@@ -386,13 +386,9 @@ a_couple_points clip_points(const a_couple_points& in_points, const v2& tangent_
         out_points.points[0] = in_points.points[0];
         out_points.num_points = 1;
     }
-    if (out_points.num_points == 0) {
-        std::cout << "all points clipped" << std::endl;
-        std::cout << "d: {" << d[0] << ", " << d[1] << "}" << std::endl;
-        std::cout << "min: " << min << ", max: " << max << std::endl;
-        std::cout << "in_points: { {" << in_points.points[0].x << ", " << in_points.points[0].y << "}, {" <<
-            in_points.points[1].x << ", " << in_points.points[1].y << "} }" << std::endl;
-    }
+    // if (out_points.num_points == 0) {
+       // just for testing
+    // }
     return out_points;
 }
 
@@ -442,9 +438,41 @@ static int find_contact_points(collision_world::contact c[2], const collision_wo
 
     auto clipped = clip_points(incident_points, tangent_axis, min, max);
     int num_out = 0;
+
+    real_t front;
+    v2 axis;
+
+    switch (pair.feature) {
+    case fid::b0_pos_x:
+    case fid::b0_neg_x:
+        axis = pair.axis;
+        front = dot(axis, p0) + s0.extents.x;
+        break;
+    case fid::b0_neg_y:
+    case fid::b0_pos_y:
+        axis = pair.axis;
+        front = dot(axis, p0) + s0.extents.y;
+        break;
+    case fid::b1_neg_x:
+    case fid::b1_pos_x:
+        axis = -pair.axis;
+        front = dot(axis, p1) + s1.extents.x;
+        break;
+    case fid::b1_neg_y:
+    case fid::b1_pos_y:
+        axis = -pair.axis;
+        front = dot(axis, p1) + s1.extents.y;
+        break;
+    }
+
     for (int i = 0; i < clipped.num_points; ++i) {
-        
-        c[num_out++].position = clipped.points[i];
+        real_t depth = vvm::dot(axis, clipped.points[i]) - front;
+        if (depth <= 0) {
+            auto& ct = c[num_out++];
+            ct.position = clipped.points[i];
+            ct.depth = depth;
+            ct.pair_id  = ((id_t) pair.feature << 4) | (id_t) incident;
+        }
     }
     return num_out;
 }
