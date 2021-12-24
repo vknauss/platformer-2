@@ -9,10 +9,9 @@ find_package(glfw3 3.3 REQUIRED)
 add_executable(platformer "")
 add_subdirectory(src)
 
-find_library(ASAN_FOUND asan)
-if (ASAN_FOUND)
-    target_compile_options(platformer PUBLIC "$<$<CONFIG:DEBUG>:-g -fno-omit-frame-pointer -fsanitize=address>")
-    target_link_options(platformer PUBLIC "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>")
+if(CMAKE_COMPILER_IS_GNUCXX)
+    target_compile_options(platformer PUBLIC $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>)
+    target_link_options(platformer PUBLIC $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>)
 endif()
 
 target_link_libraries(platformer PUBLIC
