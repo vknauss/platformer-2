@@ -62,6 +62,7 @@ struct collision_world {
         id_t pair_id;
         v2 position;
         real_t depth;
+        real_t impulse;
     };
 
     std::vector<intersecting_pair> pairs;
@@ -73,6 +74,7 @@ struct collision_world {
 
     // methods
 
+    id_t add_collision_shape(const collision_shape& shape);
     id_t add_collision_object(const transform& tfm, id_t shape_id);
 
     // broad phase, only test aabbs, use spatial data
@@ -89,6 +91,9 @@ struct collision_world {
 };
 
 struct dynamics_world : collision_world {
+
+    real_t allowed_penetration = 0.01;
+    real_t bias = 0.1;
 
     // more body data
     std::vector<velocity> velocities;

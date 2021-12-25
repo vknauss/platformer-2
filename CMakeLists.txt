@@ -9,7 +9,7 @@ find_package(glfw3 3.3 REQUIRED)
 add_executable(platformer "")
 add_subdirectory(src)
 
-if(CMAKE_COMPILER_IS_GNUCXX)
+if(UNIX AND CMAKE_COMPILER_IS_GNUCXX)
     target_compile_options(platformer PUBLIC $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>)
     target_link_options(platformer PUBLIC $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>)
 endif()

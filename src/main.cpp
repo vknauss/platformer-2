@@ -267,16 +267,30 @@ void run(App& app) {
     auto uMVP = glGetUniformLocation(program, "mvp");
     auto uColor = glGetUniformLocation(program, "color");
 
+    // init physics
     physics::dynamics_world pworld;
 
-    pworld.collision_shapes.push_back({.extents = {1, 1}});
-    pworld.collision_shapes.push_back({.extents = {10, 1}});
+    // create some collision shapes
+    auto box_shape_id = pworld.add_collision_shape({.extents = {0.5, 0.5}});
+    auto ground_shape_id = pworld.add_collision_shape({.extents = {10, 1}});
+    auto table_shape_id = pworld.add_collision_shape({.extents = {1.5, 0.05}});
+    auto table_leg_shape_id = pworld.add_collision_shape({.extents = {0.075, 0.5}});
 
-    auto player_id = pworld.add_rigid_body(0, {.position = {0, 0}, .angle = 0}, 0);
-    pworld.add_rigid_body(1, {.position = {5, 0}, .angle = 1.2}, 0);
-    pworld.add_rigid_body(1, {.position = {5, 2.5}, .angle = 1.2}, 0);
-    pworld.add_rigid_body(1, {.position = {5, 5.0}, .angle = 1.2}, 0);
-    pworld.add_collision_object({.position = {0, -4}, .angle = 0.0}, 1);
+    // 0 mass rigid bodies are static / kinematic: 1-way interaction with dynamic bodies
+    auto player_id = pworld.add_rigid_body(1, {.position = {0, 0}, .angle = 0}, box_shape_id);
+
+    // positive mass rigid bodies are dynamic
+    pworld.add_rigid_body(1, {.position = {5, 0}}, box_shape_id);
+    pworld.add_rigid_body(1, {.position = {5, 2.5}}, box_shape_id);
+    pworld.add_rigid_body(1, {.position = {5, 5.0}}, box_shape_id);
+    
+    // adding collision object equivalent to 0-mass rigid body
+    pworld.add_collision_object({.position = {0, -4}, .angle = 0.0}, ground_shape_id);
+
+    // add a table
+    pworld.add_rigid_body(1, {.position = {-1.4, -2.5}}, table_leg_shape_id);
+    pworld.add_rigid_body(1, {.position = { 1.4, -2.5}}, table_leg_shape_id);
+    pworld.add_rigid_body(1, {.position = { 0.0, -1.95}}, table_shape_id);
 
     glUseProgram(program);
 
