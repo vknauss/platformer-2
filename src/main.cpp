@@ -274,7 +274,7 @@ void run(App& app) {
     auto box_shape_id = pworld.add_collision_shape({.extents = {0.5, 0.5}});
     auto ground_shape_id = pworld.add_collision_shape({.extents = {10, 1}});
     auto table_shape_id = pworld.add_collision_shape({.extents = {1.5, 0.05}});
-    auto table_leg_shape_id = pworld.add_collision_shape({.extents = {0.075, 0.5}});
+    auto table_leg_shape_id = pworld.add_collision_shape({.extents = {0.15, 0.5}});
 
     // 0 mass rigid bodies are static / kinematic: 1-way interaction with dynamic bodies
     auto player_id = pworld.add_rigid_body(1, {.position = {0, 0}, .angle = 0}, box_shape_id);
@@ -293,6 +293,8 @@ void run(App& app) {
     pworld.add_rigid_body(1, {.position = { 0.0, -1.95}}, table_shape_id);
 
     glUseProgram(program);
+
+    glfwSwapInterval(1);
 
     auto time = glfwGetTimerValue();
     while (app.isRunning) {
@@ -327,7 +329,7 @@ void run(App& app) {
         else
             pworld.velocities[player_id].linear = {0, 0};
 
-        pworld.step(dt, 4);
+        pworld.step(1.0 / 60.0, 4);
 
         // for (int i = 0; i < n_bodies; ++i) {
         //     bodies[i].velocity += gravity * dt;
