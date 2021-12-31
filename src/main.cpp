@@ -5,7 +5,9 @@
 #include <string>
 #include <vector>
 
-#include <GL/glew.h>
+#include <ogu/shader.h>
+#include <ogu/vertex_array.h>
+
 #include <GLFW/glfw3.h>
 
 #include <vvm/vvm.hpp>
@@ -236,16 +238,45 @@ void destroyEntity(entity e, ecs& ecs) {
 
 void run(App& app) {
 
-    GLuint vao;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    // GLuint vao;
+    // glGenVertexArrays(1, &vao);
+    // glBindVertexArray(vao);
+    // ogu::vertex_array vao;
+    
+    // ogu::buffer vbo;
+    // vbo.allocate(10 * sizeof(vvm::v2f), GL_STATIC_DRAW);
 
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, 10 * sizeof(vvm::v2f), nullptr, GL_STATIC_DRAW);
-    {
-        void* ptr = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+
+
+    // GLuint vbo;
+    // glGenBuffers(1, &vbo);
+    // glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    // glBufferData(GL_ARRAY_BUFFER, 10 * sizeof(vvm::v2f), nullptr, GL_STATIC_DRAW);
+    // {
+    //     // void* ptr = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    //     void* ptr = vbo.map(GL_WRITE_ONLY);
+    //     vvm::v2f* vptr = (vvm::v2f*) ptr;
+    //     *(vptr++) = {-0.5, -0.5};
+    //     *(vptr++) = { 0.5, -0.5};
+    //     *(vptr++) = {-0.5,  0.5};
+    //     *(vptr++) = { 0.5,  0.5};
+    //     *(vptr++) = {-0.5, -0.5};
+    //     *(vptr++) = {-0.5,  0.5};
+    //     *(vptr++) = { 0.5, -0.5};
+    //     *(vptr++) = { 0.5,  0.5};
+    //     *(vptr++) = { 0.0,  0.0};
+    //     *(vptr++) = { 0.5,  0.0};
+    //     // glUnmapBuffer(GL_ARRAY_BUFFER);
+    //     vbo.unmap();
+    // }
+
+    // vao.add_binding({0, 2, GL_FLOAT, 0, 0, false, false});
+    // glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    // glEnableVertexAttribArray(0);
+
+    ogu::VertexArray vao(10 * sizeof(vvm::v2f), 0, 0);
+    
+    vao.getVertexBuffer().write(0, 0, [] (void* ptr) {
         vvm::v2f* vptr = (vvm::v2f*) ptr;
         *(vptr++) = {-0.5, -0.5};
         *(vptr++) = { 0.5, -0.5};
@@ -257,15 +288,23 @@ void run(App& app) {
         *(vptr++) = { 0.5,  0.5};
         *(vptr++) = { 0.0,  0.0};
         *(vptr++) = { 0.5,  0.0};
-        glUnmapBuffer(GL_ARRAY_BUFFER);
-    }
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(0);
+    });
 
-    GLuint program = createShaderProgram("vert.glsl", "frag.glsl");
+    vao.addAttribute({0, 2});
 
-    auto uMVP = glGetUniformLocation(program, "mvp");
-    auto uColor = glGetUniformLocation(program, "color");
+    vao.createAttributeBindings();
+    vao.enable();
+
+    ogu::ShaderProgram program({
+        {std::string(SHADERS_DIR) + "/vert.glsl", ogu::Shader::VERTEX},
+        {std::string(SHADERS_DIR) + "/frag.glsl", ogu::Shader::FRAGMENT} });
+    program.addUniform("mvp");
+    program.addUniform("color");
+
+    // GLuint program = createShaderProgram("vert.glsl", "frag.glsl");
+
+    // auto uMVP = glGetUniformLocation(program, "mvp");
+    // auto uColor = glGetUniformLocation(program, "color");
 
     // init physics
     physics::dynamics_world pworld;
@@ -292,7 +331,8 @@ void run(App& app) {
     pworld.add_rigid_body(1, {.position = { 1.4, -2.5}}, table_leg_shape_id);
     pworld.add_rigid_body(1, {.position = { 0.0, -1.95}}, table_shape_id);
 
-    glUseProgram(program);
+    // glUseProgram(program);
+    program.use();
 
     glfwSwapInterval(1);
 
@@ -347,8 +387,12 @@ void run(App& app) {
 
         static const auto setUniforms = [&] (const vvm::m4f& m, const vvm::v3f color) {
             auto mvp = viewProj * m;
-            glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
-            glUniform3fv(uColor, 1, color.data);
+            // glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
+            // glUniform3fv(uColor, 1, color.data);
+            glUniformMatrix4fv(program.getUniformLocation("mvp"), 1, GL_FALSE, mvp.data);
+            glUniform3fv(program.getUniformLocation("color"), 1, color.data);
+            // program.setUniform("mvp", mvp);
+            // program.setUniform("color", color);
         };
 
         static const auto drawQuad = [&] (const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
@@ -419,7 +463,7 @@ void run(App& app) {
         glfwSwapBuffers(app.window);
     }
 
-    glDeleteProgram(program);
+    // glDeleteProgram(program);
 }
 
 int main() {

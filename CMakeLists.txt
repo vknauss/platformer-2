@@ -14,6 +14,11 @@ if(UNIX AND CMAKE_COMPILER_IS_GNUCXX)
     target_link_options(platformer PUBLIC $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer -fsanitize=address>)
 endif()
 
+set(OPENGL_UTILS_PATH "../opengl-utils")
+target_include_directories(platformer PUBLIC ${OPENGL_UTILS_PATH}/include)
+target_link_directories(platformer PUBLIC ${OPENGL_UTILS_PATH}/build/${CMAKE_BUILD_TYPE})
+target_link_libraries(platformer PUBLIC "opengl-utils")
+
 target_link_libraries(platformer PUBLIC
     OpenGL::GL
     GLEW::GLEW
