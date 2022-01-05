@@ -147,6 +147,7 @@ void run(App& app) {
 
     auto time = glfwGetTimerValue();
     bool pause = false, p_down = false;
+    bool draw_extra = false, e_down = false;
     while (app.isRunning) {
         glfwPollEvents();
 
@@ -165,6 +166,11 @@ void run(App& app) {
             if (!p_down) pause = !pause;
             p_down = true;
         } else p_down = false;
+        
+        if (glfwGetKey(app.window, GLFW_KEY_E) == GLFW_PRESS) {
+            if (!e_down) draw_extra = !draw_extra;
+            e_down = true;
+        } else e_down = false;
 
         vvm::v2f move_dir(0, 0);
         if (glfwGetKey(app.window, GLFW_KEY_W)) {
@@ -181,8 +187,8 @@ void run(App& app) {
         }
         if (vvm::dot(move_dir, move_dir) > 0)
             pworld.velocities[player_id].linear = vvm::normalize(move_dir) * 5.0f;
-        else
-            pworld.velocities[player_id].linear = {0, 0};
+        // else
+            // pworld.velocities[player_id].linear = {0, 0};
 
         if (!pause) pworld.step(1.0 / 60.0, 4);
 
@@ -233,11 +239,14 @@ void run(App& app) {
             const auto& s = pworld.cw.collision_shapes[pworld.cw.shape_ids[i]];
             drawQuad(2.0f * s.extents, t.position, t.angle, {1, 1, 1});
             const auto& b = pworld.cw.aabbs[i];
-            auto ext = b.max_extent - b.min_extent;
-            auto pos = (b.max_extent + b.min_extent) * 0.5f;
-            drawQuad(ext, pos, 0, {1, 0.25, 0});
+            if (draw_extra) {
+                auto ext = b.max_extent - b.min_extent;
+                auto pos = (b.max_extent + b.min_extent) * 0.5f;
+                drawQuad(ext, pos, 0, {1, 0.25, 0});
+            }
         }
 
+        if (draw_extra)
         for (const auto& pair : pworld.cw.bp.pairs()) {
             const auto& b0 = pworld.cw.aabbs[pair.first];
             const auto& b1 = pworld.cw.aabbs[pair.second];
@@ -246,7 +255,7 @@ void run(App& app) {
             auto ext = bmax - bmin;
             auto pos = (bmax + bmin) * 0.5f;
             drawQuad(ext, pos, 0, {1, 1, 0});
-        }
+        };
 
         for (const auto& pair : pworld.cw.np.pairs()) {
             const auto& t0 = pworld.cw.transforms[pair.i0];
@@ -254,8 +263,10 @@ void run(App& app) {
             const auto& s0 = pworld.cw.collision_shapes[pworld.cw.shape_ids[pair.i0]];
             const auto& s1 = pworld.cw.collision_shapes[pworld.cw.shape_ids[pair.i1]];
             
-            drawLine(pair.incident_face_points[0], pair.incident_face_points[1], {0, 1, 1});
-            drawLine(pair.reference_face_points[0], pair.reference_face_points[1], {0, 0, 1});
+            if (draw_extra) {
+                drawLine(pair.incident_face_points[0], pair.incident_face_points[1], {0, 1, 1});
+                drawLine(pair.reference_face_points[0], pair.reference_face_points[1], {0, 0, 1});
+            }
 
             vvm::v2f p1, p2;
             if (pair.feature.b0_reference) {

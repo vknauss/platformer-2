@@ -45,11 +45,6 @@ static constexpr bool aabbs_intersect(const aabb& b0, const aabb& b1) {
         b0.max_extent.y >= b1.min_extent.y && b0.min_extent.y <= b1.max_extent.y;
 }
 
-// struct collision_world::broadphase_data {
-//     std::vector<id_t> sort_ids_x, sort_ids_y;
-//     std::vector<id_t> active_intervals;
-// };
-
 // custom insertion sort
 template<typename T, typename compare>
 static void sort_mapped_ids(std::vector<id_t>& ids, const std::vector<T>& mapped, const compare& c) {
@@ -102,9 +97,6 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
     m2 r0 = vvm::rotate(t0.angle);  // rotation matrices,
     m2 r1 = vvm::rotate(t1.angle);  // transform points from body space to world space (minus a translation)
 
-    // std::cout << "r0: " << vvm::to_string(r0) << std::endl;
-    // std::cout << "r1: " << vvm::to_string(r1) << std::endl;
-
     m2 r0t = vvm::transpose(r0);  // transpose (equivalently, inverse) rotation matrices
     m2 r1t = vvm::transpose(r1);  // do the opposite of above (cancel them out)
 
@@ -123,8 +115,6 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
 
     // test b0 x axis
     auto depth = result.depth = std::abs(d0.x) - s0.extents.x - e10.x;
-    // std::cout << "b0 x depth: " << depth << std::endl;
-    // float min_depth = depth;
     result.normal = r0[0];
     result.reference_face = face_id::pos_x;
     result.reference_axis = axis_id::x;
@@ -132,15 +122,12 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
         result.normal = -result.normal;
         result.reference_face = face_id::neg_x;
     }
-    // result.depth = vvm::dot(result.normal, t0.position) + s0.extents.x;
     if (depth > 0) {  // separating axis found
         return result;
     }
-    // std::cout << "result depth: " << result.depth << std::endl;
 
     // test b0 y axis
     depth = std::abs(d0.y) - s0.extents.y - e10.y;
-    // std::cout << "b0 y depth: " << depth << std::endl;
     if (depth > result.depth) {
         result.depth = depth;
         result.normal = r0[1];
@@ -150,10 +137,8 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
             result.normal = -result.normal;
             result.reference_face = face_id::neg_y;
         }
-        // result.depth = vvm::dot(result.normal, t0.position) + s0.extents.y;
         if (depth > 0) return result;
     }
-    // std::cout << "result depth: " << result.depth << std::endl;
 
     // test b1 axes
     // we can just transpose ar10 to get abs(r1t * r0)
@@ -163,9 +148,7 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
 
     // test b1 x axis
     depth = std::abs(d1.x) - s1.extents.x - e01.x;
-    // std::cout << "b1 x depth: " << depth << std::endl;
     if (depth > result.depth) {
-        // min_depth = depth;
         result.depth = depth;
         result.b0_reference = false;
         result.reference_axis = axis_id::x;
@@ -175,16 +158,12 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
             result.normal = -result.normal;
             result.reference_face = face_id::neg_x;
         }
-        // result.depth = vvm::dot(result.normal, t1.position) - s1.extents.x;
         if (depth > 0) return result;
     }
-    // std::cout << "result depth: " << result.depth << std::endl;
 
     // test b1 y axis
     depth = std::abs(d1.y) - s1.extents.y - e01.y;
-    // std::cout << "b1 y depth: " << depth << std::endl;
     if (depth > result.depth) {
-        // min_depth = depth;
         result.depth = depth;
         result.b0_reference = false;
         result.reference_axis = axis_id::y;
@@ -194,9 +173,7 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
             result.normal = -result.normal;
             result.reference_face = face_id::neg_y;
         }
-        // result.depth = vvm::dot(result.normal, t1.position) - s1.extents.y;
     }
-    // std::cout << "result depth: " << result.depth << std::endl;
 
     return result;
 }
@@ -208,46 +185,6 @@ static face_id find_incident(const v2& normal, const m2& rot_inc) {
     }
     return d1 > 0 ? face_id::neg_y : face_id::pos_y;
 }
-
-// static feature_id find_incident(feature_id reference, const v2& normal, const transform& t0, const transform& t1) {
-//     bool b0_reference;  // whether the reference face comes from b0 or not
-//     switch (reference) {
-//     case feature_id::b1_neg_x:
-//     case feature_id::b1_neg_y:
-//     case feature_id::b1_pos_x:
-//     case feature_id::b1_pos_y:
-//         b0_reference = false;
-//         break;
-//     default:
-//         b0_reference = true;
-//     }
-
-//     feature_id incident;
-//     if (b0_reference) {
-//         // test faces of b1
-//         m2 r1 = vvm::rotate(t1.angle);
-//         real_t d0 = vvm::dot(r1[0], normal), d1 = vvm::dot(r1[1], normal);
-//         if (std::abs(d0) > std::abs(d1)) {
-//             // incident face is +/- x
-//             // d0 > 0 means the vector from b0 to b1 is more or less in b1's x axis
-//             // so b1 is to the right of b0, so the incident face is left (negative x)
-//             incident =  d0 > 0 ? feature_id::b1_neg_x : feature_id::b1_pos_x;
-//         } else {
-//             incident = d1 > 0 ? feature_id::b1_neg_y : feature_id::b1_pos_y;
-//         }
-//     } else {
-//         // test faces of b0
-//         m2 r0 = vvm::rotate(t0.angle);
-//         real_t d0 = vvm::dot(r0[0], normal), d1 = vvm::dot(r0[1], normal);
-//         if (std::abs(d0) > std::abs(d1)) {
-//             incident =  d0 > 0 ? feature_id::b0_pos_x : feature_id::b0_neg_x;
-//         } else {
-//             incident = d1 > 0 ? feature_id::b0_pos_y : feature_id::b0_neg_y;
-//         }
-//     }
-
-//     return incident;
-// }
 
 struct a_couple_points {
     v2 points[2];
@@ -278,89 +215,6 @@ static constexpr a_couple_points edge_points(face_id f, const v2& extents, const
             }, 2};
     }
     return {{}, 0};
-}
-
-// a_couple_points edge_points(feature_id f, const collision_shape& s0, const collision_shape& s1, const transform& t0, const transform& t1) {
-//     m2 r0 = vvm::rotate(t0.angle);
-//     m2 r1 = vvm::rotate(t1.angle);
-
-//     const v2& e0 = s0.extents;
-//     const v2& e1 = s1.extents;
-
-//     switch (f) {
-//     case feature_id::b0_neg_x:
-//         return {
-//             { t0.position + r0 * v2(-e0.x, -e0.y), 
-//               t0.position + r0 * v2(-e0.x,  e0.y)
-//             }, 2};
-//     case feature_id::b0_neg_y:
-//         return {
-//             { t0.position + r0 * v2(-e0.x, -e0.y), 
-//               t0.position + r0 * v2( e0.x, -e0.y)
-//             }, 2};
-//     case feature_id::b0_pos_x:
-//         return {
-//             { t0.position + r0 * v2( e0.x, -e0.y), 
-//               t0.position + r0 * v2( e0.x,  e0.y)
-//             }, 2};
-//     case feature_id::b0_pos_y:
-//         return {
-//             { t0.position + r0 * v2(-e0.x,  e0.y), 
-//               t0.position + r0 * v2( e0.x,  e0.y)
-//             }, 2};
-//     case feature_id::b1_neg_x:
-//         return {
-//             { t1.position + r1 * v2(-e1.x, -e1.y), 
-//               t1.position + r1 * v2(-e1.x,  e1.y)
-//             }, 2};
-//     case feature_id::b1_neg_y:
-//         return {
-//             { t1.position + r1 * v2(-e1.x, -e1.y), 
-//               t1.position + r1 * v2( e1.x, -e1.y)
-//             }, 2};
-//     case feature_id::b1_pos_x:
-//         return {
-//             { t1.position + r1 * v2( e1.x, -e1.y), 
-//               t1.position + r1 * v2( e1.x,  e1.y)
-//             }, 2};
-//     case feature_id::b1_pos_y:
-//         return {
-//             { t1.position + r1 * v2(-e1.x,  e1.y), 
-//               t1.position + r1 * v2( e1.x,  e1.y)
-//             }, 2};
-//     }
-//     return {{}, 0};
-// }
-
-// struct clip_result {
-//     v2 p[2];
-//     int np;
-// };
-
-static constexpr a_couple_points clip_points(const a_couple_points& points, const v2& axis, real_t max) {
-    bool out[2] {true, true};
-    real_t d[2] {0, 0};
-    for (int i = 0; i < points.num_points; ++i) {
-        d[i] = vvm::dot(points.points[i], axis);
-        out[i] = d[i] > max;
-    }
-    if (out[0] && out[1]) {
-        return {{}, 0};
-    }
-    if (out[0]) {
-        real_t interp = (max - d[1]) / (d[0] - d[1]);
-        return {{ vvm::lerp(points.points[1], points.points[0], interp),
-                  points.points[1]},
-                points.num_points};
-    }
-    if (out[1] && points.num_points > 1) {
-        real_t interp = (max - d[0]) / (d[1] - d[0]);
-        return {{ points.points[0],
-                  vvm::lerp(points.points[0], points.points[1], interp)},
-                points.num_points};
-    }
-
-    return points;
 }
 
 a_couple_points clip_points(const a_couple_points& in_points, const v2& tangent_axis, real_t min, real_t max) {
@@ -427,17 +281,11 @@ static int find_contact_points(contact c[2], const collision_pair& p, const coll
             min = pd0 - s0.extents.y;
             max = pd0 + s0.extents.y;
             front = dot(axis, p0) + s0.extents.x;
-            std::cout << "b0 x" << std::endl;
-            std::cout << vvm::to_string(s0.extents) << std::endl;
-            std::cout << pd0 << std::endl;
             break;
         case axis_id::y:
             min = pd0 - s0.extents.x;
-            min = pd0 + s0.extents.x;
+            max = pd0 + s0.extents.x;
             front = dot(axis, p0) + s0.extents.y;
-            std::cout << "b0 y" << std::endl;
-            std::cout << vvm::to_string(s0.extents) << std::endl;
-            std::cout << pd0 << std::endl;
             break;
         }
     } else {
@@ -448,30 +296,16 @@ static int find_contact_points(contact c[2], const collision_pair& p, const coll
             min = pd1 - s1.extents.y;
             max = pd1 + s1.extents.y;
             front = dot(axis, p1) + s1.extents.x;
-            std::cout << "b1 x" << std::endl;
-            std::cout << vvm::to_string(s1.extents) << std::endl;
-            std::cout << pd1 << std::endl;
             break;
         case axis_id::y:
             min = pd1 - s1.extents.x;
-            min = pd1 + s1.extents.x;
+            max = pd1 + s1.extents.x;
             front = dot(axis, p1) + s1.extents.y;
-            std::cout << "b1 y" << std::endl;
-            std::cout << vvm::to_string(s1.extents) << std::endl;
-            std::cout << pd1 << std::endl;
             break;
         }
     }
 
-    std::cout << "clipping points: " << std::endl;
-    std::cout << "\tp0: " << vvm::to_string(incident_points.points[0]) << std::endl;
-    std::cout << "\tp1: " << vvm::to_string(incident_points.points[1]) << std::endl;
-    std::cout << "\taxis: " << vvm::to_string(p.tangent) << std::endl;
-    std::cout << "\tbounds: " << min << " " << max << std::endl;
     auto clipped = clip_points(incident_points, p.tangent, min, max);
-    // clipped = clip_points(clipped, -p.tangent, min);
-    if (clipped.num_points == 1) std::cerr << "clipping gave 1 point?" << std::endl;
-    std::cout << "clipping gave " << clipped.num_points << " points" << std::endl;
     
     int num_out = 0;
     for (int i = 0; i < clipped.num_points; ++i) {
@@ -500,10 +334,9 @@ void broadphase::update(const std::vector<aabb>& aabbs) {
 
     // for now, only worry about sorting along 1 axis
 
-    if (_sort_ids.size() < aabbs.size()) {
-        auto oldsize = _sort_ids.size();
+    if (_sort_ids.size() != aabbs.size()) {
         _sort_ids.resize(aabbs.size());
-        for (auto i = oldsize; i < aabbs.size(); ++i) {
+        for (auto i = 0u; i < aabbs.size(); ++i) {
             _sort_ids[i] = i;
         }
     }
@@ -553,7 +386,6 @@ void narrowphase::update(const std::vector<broadphase::pair>& bpairs, const std:
     _pairs.clear();
     _contacts.clear();
 
-    // std::cout << "num pairs: " << bpairs.size() << std::endl;
     for (auto i = 0u; i < bpairs.size(); ++i) {
         const auto& [i0, i1] = bpairs[i];
         const auto& t0 = tfms[i0], & t1 = tfms[i1];
@@ -561,12 +393,10 @@ void narrowphase::update(const std::vector<broadphase::pair>& bpairs, const std:
 
         auto sat_result = compute_sat(s0, s1, t0, t1);
         if (sat_result.depth <= 0.0) {
-            // std::cout << "generating collision pair" << std::endl;
             collision_pair p;
             p.i0 = i0;
             p.i1 = i1;
             p.normal = sat_result.normal;
-            // std::cout << "normal: " << vvm::to_string(p.normal) << std::endl;
             p.depth = sat_result.depth;
             if (sat_result.b0_reference) {
                 p.feature.b0_face = sat_result.reference_face;
@@ -597,7 +427,6 @@ void narrowphase::update(const std::vector<broadphase::pair>& bpairs, const std:
                 p.incident_face_points[1] = b0_points.points[1];
             }
 
-            // std::cout << "found " << p.num_contacts << " contacts" << std::endl;
             for (int j = 0; j < p.num_contacts; ++j) {
                 p.contact_ids[j] = (id_t) _contacts.size();
                 _contacts.push_back(c[j]);
@@ -622,21 +451,6 @@ void collision_world::update() {
     np.update(bp.pairs(), collision_shapes, transforms, shape_ids);
 }
 
-// void collision_world::find_contacts() {
-//     // use the intersecting pairs to find contacts
-//     contacts.clear();
-//     for (auto& pair : pairs) {
-//         if (find_axis(pair, *this)) {
-//             contact c[2];
-//             pair.num_contacts = find_contact_points(c, pair, *this);
-//             for (int i = 0; i < pair.num_contacts; ++i) {
-//                 pair.contact_ids[i] = (id_t) contacts.size();
-//                 contacts.push_back(c[i]);
-//             }
-//         }
-//     }
-// }
-
 id_t collision_world::add_collision_shape(const collision_shape& shape) {
     id_t id = collision_shapes.size();
     collision_shapes.push_back(shape);
@@ -653,11 +467,9 @@ id_t collision_world::add_collision_object(const transform& tfm, id_t shape_id) 
 
 collision_world::collision_world() :
     num_bodies(0) {
-    // bd = new broadphase_data;
 }
 
 collision_world::~collision_world() {
-    // delete bd;
 }
 
 };  // namespace physics
