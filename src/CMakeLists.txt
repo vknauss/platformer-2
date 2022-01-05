@@ -6,3 +6,4 @@ target_include_directories(platformer PUBLIC
 
 add_subdirectory("shaders")
 add_subdirectory("physics")
+add_subdirectory("render")

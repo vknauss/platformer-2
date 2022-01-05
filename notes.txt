@@ -28,3 +28,104 @@ now as a mat4 (homogeneous coords, column major, so maybe backwards lol)
  [0,                           zoom,              0, 0]
  [0,                           0,                 1, 0]
  [ -offset.x * zoom / aspect,  -offset.y * zoom,  0, 1]]
+
+
+
+
+-- render engine design
+
+goal: a flexible system that allows for the maximum of various graphical 
+techniques while maintaining a consistent and straightforward api.
+
+ideas:
+include the notion of a render pass, which encapsulates a shader program and
+the information necessary to bind resources (buffers & textures) to perform a
+certain stage of rendering. define a layout for the shader which would specify
+the vertex attributes as well as texture samplers and uniform blocks, as well
+as a core shader (or rather, vertex and fragment pair of shaders) that will use
+these resources, then the system will automatically build the proper shaders and
+come up with the bind points for the various resources.
+so clearly to describe a render pass we need a structure representing a resource
+binding.
+vertex attribute resource binding:
+    this should use a vao as the resource, since that's the efficient way opengl 3.3
+    gives us to represent its own vertex attribute bindings. since the vao will already
+    contain the buffer and attribute data in a way opengl can use, we don't necessarily
+    need to keep a separate copy of that same data. on the other hand, in order to make
+    the entire system work, we need to make sure that the attribute locations given to opengl when
+    we set up the vao and the locations we plug into the shader to make this work agree with each
+    other. rather than putting it on the user to make sure these arbitrary integers agree,
+    maybe the vertex attribute resource binding could be something you pass into the vao
+    on creation. that way the vao can know how it will be used, and intelligently control
+    the attribute locations without external control. how would this look?
+
+    glVertexAttribPointer(GLuint location, Glint size, GLenum type, GLboolean normalized, GLintptr stride, const void* pointer)
+    
+    this is the method signature from the opengl man pages, that basically gives all the info the vao needs about
+    its own vbo bindings. other info that's needed are whether the attribute will be used as an integer
+    (which controls whether we call glVertexAttribPointer or glVertexAttribIPointer),
+    and whether the input rate of the attribute is per-vertex or per-instance (glVertexAttribDivisor).
+    regarding the latter: i think it's reasonable to expect the user to use separate buffers for
+    instanced or non-instanced attributes. this is important considering the following point:
+    some of this data needs to be described per-attribute in a buffer, and some can be described
+    for a buffer as a whole *1.
+    
+    so which data are which?
+    
+    per buffer:
+        stride (assume interleaved, vulkan does it so i will too :])
+        input rate (this seems reasonable)
+        attributes[]:
+    per attribute:
+        location, size, type, normalized, integer, offset
+    
+    now there's another question: which data can be described generally in a pass and
+        which can only be described relative to a particuar vbo binding?
+
+    per pass:
+        input rate
+        attributes[]:
+            name (how this attribute should be identified in the shader. include type?)
+            location
+            size
+            integer
+
+    per buffer:
+        stride
+        attributes[]:
+            type, normalized, offset
+
+    which need to be given by the user to create a vbo binding?
+
+    per buffer:
+        stride
+        attributes[]:
+            name (to match up with the pass data)
+            type, normalized, offset
+    
+    which need to be given by the pass?
+    per pass per buffer per attribute:
+        name, location, size, integer
+
+    we can calculate the size and integerness by parsing a glsl declaration.
+    if we give this as something like:
+    
+    per attribute:
+        name = "float f" or "vec3 position" or "uvec4 bone_indices"
+
+    then the pass figures out the size and integerness by comparing strings
+
+    so when you create the pass you only need to give it vertex attribute resource
+    bindings, aka the string name and type as used in the shader, then when you say
+    then you specify the buffers you wanna use to execute a certain rendering operation.
+    to prepare for this, you create a vertex array object ahead of time
+    using a mapping where each buffer specifies which attributes it contains,
+    the per buffer stride, and relative offset of each attribute in each stride-sized block,
+    as well as the data type used in the buffer and whether that data should be normalized.
+    
+
+
+
+
+    *1 (without seriously crippling flexibility. the exceptions seem like 
+    pretty extreme scenarios, which i haven't ever really encountered)
