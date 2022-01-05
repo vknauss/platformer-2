@@ -88,12 +88,12 @@ static id_t find_pair(id_t i0, id_t i1, const std::vector<pair_t>& ccs) {
     return ID_NULL;
 }
 
-void contact_solver::update(const std::vector<collision_pair>& ps,
-                            const std::vector<contact>& cs,
-                            const std::vector<transform>& tfm,
-                            const std::vector<real_t>& im,
-                            const std::vector<real_t>& ii,
-                            const std::vector<real_t>& friction) {
+void contact_solver::update_constraints(const std::vector<collision_pair>& ps,
+                                        const std::vector<contact>& cs,
+                                        const std::vector<transform>& tfm,
+                                        const std::vector<real_t>& im,
+                                        const std::vector<real_t>& ii,
+                                        const std::vector<real_t>& friction) {
     // copy over prev frame data
     oldccs = ccs;
     oldsps = sps;
@@ -149,8 +149,8 @@ void contact_solver::update(const std::vector<collision_pair>& ps,
                     const auto& occ = oldccs[osp.contact_ids[k]];
                     if (c.feature == occ.c.feature) {
                         // copy over previous accumulated impulses
-                        // cc.impulse_normal = occ.impulse_normal;
-                        // cc.impulse_tangent = occ.impulse_tangent;
+                        cc.impulse_normal = occ.impulse_normal;
+                        cc.impulse_tangent = occ.impulse_tangent;
                         break;
                     }
                 }
@@ -159,6 +159,21 @@ void contact_solver::update(const std::vector<collision_pair>& ps,
     }
     ccs.resize(ci);
     sps.resize(pi);
+}
+
+void contact_solver::apply_impulses(const std::vector<real_t>& im, const std::vector<real_t>& ii,
+                                    std::vector<velocity>& vels) {
+    for (const auto& p : sps) {
+        auto& v0 = vels[p.i0], & v1 = vels[p.i1];
+        for (int i = 0; i < p.num_contacts; ++i) {
+            const auto& cc = ccs[p.contact_ids[i]];
+            auto impulse = cc.impulse_normal * p.normal + cc.impulse_tangent * p.tangent;
+            v0.linear -= im[p.i0] * impulse;
+            v1.linear += im[p.i1] * impulse;
+            v0.angular -= ii[p.i0] * vvm::cross(cc.r0, impulse);
+            v1.angular += ii[p.i1] * vvm::cross(cc.r1, impulse);
+        }
+    }
 }
 
 void contact_solver::solve(const std::vector<real_t>& im, const std::vector<real_t>& ii, real_t dt,
@@ -227,7 +242,8 @@ void dynamics_world::step(real_t dt, int iterations) {
             velocities[i].linear += v2(0, -9.8) * dt;
     }
 
-    solver.update(cw.np.pairs(), cw.np.contacts(), cw.transforms, imasses, iinertias, frictions);
+    solver.update_constraints(cw.np.pairs(), cw.np.contacts(), cw.transforms, imasses, iinertias, frictions);
+    solver.apply_impulses(imasses, iinertias, velocities);
 
     for (int iterc = 0; iterc < iterations; ++iterc) {
         solver.solve(imasses, iinertias, dt, velocities);

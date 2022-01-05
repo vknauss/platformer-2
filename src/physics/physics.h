@@ -14,6 +14,7 @@ namespace physics {
 typedef float real_t;
 
 typedef unsigned int id_t;
+constexpr id_t ID_NULL = std::numeric_limits<id_t>::max();
 
 using v2 = vvm::v2<real_t>;
 using m2 = vvm::m2<real_t>;
@@ -44,11 +45,6 @@ enum class face_id : uint8_t {
     pos_x, neg_x, pos_y, neg_y
 };
 
-enum class feature_id : uint8_t {
-    b0_pos_x, b0_neg_x, b0_pos_y, b0_neg_y,
-    b1_pos_x, b1_neg_x, b1_pos_y, b1_neg_y
-};
-
 struct contact_feature {
     face_id b0_face, b1_face;
     axis_id ref_axis;
@@ -68,56 +64,17 @@ struct collision_pair {
 
     real_t depth;
 
-    // feature_id reference_face, incident_face;
     contact_feature feature;
 
     v2 incident_face_points[2];
     v2 reference_face_points[2];
 };
 
-// struct pair_cache {
-//     std::vector<collision_pair> pairs;
-//     std::map<std::pair<id_t, id_t>, id_t> pairs_map;
-// };
-
-
-constexpr id_t ID_NULL = std::numeric_limits<id_t>::max();
-
-// struct rigid_body {
-//     real_t mass;
-//     id_t shape_id;
-//     transform tfm;
-//     velocity vel;
-// };
-
-// class world {
-//     std::vector<collision_shape> shapes;
-    
-//     std::vector<transform> tfms;
-//     std::vector<velocity> vels;
-
-
-// };
-
-// struct intersecting_pair {
-//     id_t b0, b1;
-
-//     id_t contact_ids[2];
-//     int num_contacts;
-
-//     v2 axis;
-//     real_t offset;
-
-//     feature_id feature;
-// };
-
 struct contact {
-    // id_t pair_id;
     v2 position;
     real_t depth;
     contact_feature feature;
 };
-
 
 class broadphase {
 public:
@@ -153,18 +110,6 @@ private:
     std::vector<contact> _contacts;
 
 };
-
-inline const std::vector<broadphase::pair>& broadphase::pairs() const {
-    return _pairs;
-}
-
-inline const std::vector<collision_pair>& narrowphase::pairs() const {
-    return _pairs;
-}
-
-inline const std::vector<contact>& narrowphase::contacts() const {
-    return _contacts;
-}
 
 struct collision_world {
     // shapes
@@ -228,12 +173,16 @@ struct contact_solver {
 
     // mapped_storage<contact_constraint> cmap;
 
-    void update(const std::vector<collision_pair>& ps,
-                const std::vector<contact>& cs,
-                const std::vector<transform>& tfm,
-                const std::vector<real_t>& im,
-                const std::vector<real_t>& ii,
-                const std::vector<real_t>& friction);
+    void update_constraints(const std::vector<collision_pair>& ps,
+                            const std::vector<contact>& cs,
+                            const std::vector<transform>& tfm,
+                            const std::vector<real_t>& im,
+                            const std::vector<real_t>& ii,
+                            const std::vector<real_t>& friction);
+
+    void apply_impulses(const std::vector<real_t>& im,
+                        const std::vector<real_t>& ii,
+                        std::vector<velocity>& vels);
 
     void solve(const std::vector<real_t>& im, 
                const std::vector<real_t>& ii,
@@ -264,5 +213,17 @@ struct dynamics_world {
     virtual ~dynamics_world();
 
 };
+
+inline const std::vector<broadphase::pair>& broadphase::pairs() const {
+    return _pairs;
+}
+
+inline const std::vector<collision_pair>& narrowphase::pairs() const {
+    return _pairs;
+}
+
+inline const std::vector<contact>& narrowphase::contacts() const {
+    return _contacts;
+}
 
 };  // namespace physics
