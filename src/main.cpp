@@ -84,8 +84,26 @@ void cleanup(ErrorCode err, App& app) {
 
 #define SHADER_PATH(X) SHADERS_DIR "/" X
 
+struct keyboard_state {
+    std::map<int, bool> key_down;
+    std::map<int, bool> key_pressed;
+};
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    auto ks = (keyboard_state*) glfwGetWindowUserPointer(window);
+    if (action == GLFW_PRESS) {
+        ks->key_down[key] = true;
+        ks->key_pressed[key] = true;
+    } else if (action == GLFW_RELEASE) {
+        ks->key_down[key] = false;
+    }
+}
 
 void run(App& app) {
+    keyboard_state ks;
+    glfwSetWindowUserPointer(app.window, &ks);
+    glfwSetKeyCallback(app.window, key_callback);
+
     ogu::buffer vbo(10 * sizeof(vvm::v2f));
 
     ogu::vertex_buffer_binding vbo_binding {vbo};
@@ -112,7 +130,8 @@ void run(App& app) {
     ogu::shader_program program({
         {{utils::file_string(SHADER_PATH("vert.glsl"))}, ogu::shader::type::VERTEX},
         {{utils::file_string(SHADER_PATH("frag.glsl"))}, ogu::shader::type::FRAGMENT} });
-    program.addUniform("mvp");
+    // program.addUniform("mvp");
+    program.addUniformBuffer("scene_data");
     program.addUniform("color");
 
     // init physics
@@ -131,27 +150,33 @@ void run(App& app) {
     pworld.add_rigid_body(1, {.position = {5, 0}}, box_shape_id, 0.5);
     pworld.add_rigid_body(1, {.position = {5, 2.5}}, box_shape_id, 0.5);
     pworld.add_rigid_body(1, {.position = {5, 5.0}}, box_shape_id, 0.5);
+    pworld.add_rigid_body(1, {.position = {5, 8.0}}, box_shape_id, 0.5);
+    pworld.add_rigid_body(1, {.position = {5, 11.0}}, box_shape_id, 0.5);
+    pworld.add_rigid_body(1, {.position = {5, 14.0}}, box_shape_id, 0.5);
     
     // 0 mass bodies are static
     pworld.add_rigid_body(0, {.position = {0, -4}, .angle = 0.0}, ground_shape_id, 0.5);
 
     // add a table
-    pworld.add_rigid_body(1, {.position = {-1.4, -2.5}}, table_leg_shape_id, 0.5);
-    pworld.add_rigid_body(1, {.position = { 1.4, -2.5}}, table_leg_shape_id, 0.5);
-    pworld.add_rigid_body(1, {.position = { 0.0, -1.95}}, table_shape_id, 0.5);
+    pworld.add_rigid_body(0.1, {.position = {-1.4, -2.5}}, table_leg_shape_id, 0.5);
+    pworld.add_rigid_body(0.1, {.position = { 1.4, -2.5}}, table_leg_shape_id, 0.5);
+    pworld.add_rigid_body(0.1, {.position = { 0.0, -1.95}}, table_shape_id, 0.5);
 
     // glUseProgram(program);
     program.use();
 
     glfwSwapInterval(1);
 
+    ogu::buffer scene_data_buffer(sizeof(vvm::m2f));
+
     auto time = glfwGetTimerValue();
-    bool pause = false, p_down = false;
-    bool draw_extra = false, e_down = false;
+    bool pause = false;
+    bool draw_extra = false;
     while (app.isRunning) {
+        ks.key_pressed.clear();
         glfwPollEvents();
 
-        if (glfwWindowShouldClose(app.window) || glfwGetKey(app.window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        if (glfwWindowShouldClose(app.window) || ks.key_down[GLFW_KEY_ESCAPE]) {
             app.isRunning = false;
         }
 
@@ -162,35 +187,33 @@ void run(App& app) {
         time = glfwGetTimerValue();
         float dt = (double) (time - lastTime) / glfwGetTimerFrequency(); 
 
-        if (glfwGetKey(app.window, GLFW_KEY_P) == GLFW_PRESS) {
-            if (!p_down) pause = !pause;
-            p_down = true;
-        } else p_down = false;
+        if (ks.key_pressed[GLFW_KEY_P]) {
+            pause = !pause;
+        }
         
-        if (glfwGetKey(app.window, GLFW_KEY_E) == GLFW_PRESS) {
-            if (!e_down) draw_extra = !draw_extra;
-            e_down = true;
-        } else e_down = false;
+        if (ks.key_pressed[GLFW_KEY_E]) {
+            draw_extra = !draw_extra;
+        }
 
         vvm::v2f move_dir(0, 0);
-        if (glfwGetKey(app.window, GLFW_KEY_W)) {
+        if (ks.key_down[GLFW_KEY_W]) {
             move_dir.y += 1;
         }
-        if (glfwGetKey(app.window, GLFW_KEY_S)) {
+        if (ks.key_down[GLFW_KEY_S]) {
             move_dir.y -= 1;
         }
-        if (glfwGetKey(app.window, GLFW_KEY_A)) {
+        if (ks.key_down[GLFW_KEY_A]) {
             move_dir.x -= 1;
         }
-        if (glfwGetKey(app.window, GLFW_KEY_D)) {
+        if (ks.key_down[GLFW_KEY_D]) {
             move_dir.x += 1;
         }
         if (vvm::dot(move_dir, move_dir) > 0)
-            pworld.velocities[player_id].linear = vvm::normalize(move_dir) * 5.0f;
+            pworld.velocities[player_id].linear += vvm::normalize(move_dir) * 15.0f * dt;
         // else
             // pworld.velocities[player_id].linear = {0, 0};
 
-        if (!pause) pworld.step(1.0 / 60.0, 4);
+        if (!pause || ks.key_pressed[GLFW_KEY_R]) pworld.step(1.0 / 60.0, 20);
 
         // for (int i = 0; i < n_bodies; ++i) {
         //     bodies[i].velocity += gravity * dt;
@@ -210,7 +233,9 @@ void run(App& app) {
             auto mvp = viewProj * m;
             // glUniformMatrix4fv(uMVP, 1, GL_FALSE, mvp.data);
             // glUniform3fv(uColor, 1, color.data);
-            glUniformMatrix4fv(program.getUniformLocation("mvp"), 1, GL_FALSE, mvp.data);
+            scene_data_buffer.write(0, 0, [&] (void* ptr) { *(vvm::m4f*) ptr = mvp; });
+            program.bindUniformBuffer("scene_data", 0, scene_data_buffer, 0, scene_data_buffer.size());
+            // glUniformMatrix4fv(program.getUniformLocation("mvp"), 1, GL_FALSE, mvp.data);
             glUniform3fv(program.getUniformLocation("color"), 1, color.data);
             // program.setUniform("mvp", mvp);
             // program.setUniform("color", color);

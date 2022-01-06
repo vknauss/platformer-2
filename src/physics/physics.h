@@ -163,7 +163,7 @@ struct contact_pair_cache {
 };
 
 struct contact_solver {
-    real_t allowed_penetration = 0.01, bias = 0.2;
+    real_t allowed_penetration = 0.01, bias = 0.1;
 
     std::vector<contact_constraint> ccs;
     std::vector<contact_solver_pair> sps;
