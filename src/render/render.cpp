@@ -56,6 +56,7 @@ renderer::renderer() :
 
 void renderer::set_camera_matrix(const vvm::m4f& m) {
     _scene_ubo.write(0, 0, [&] (void* ptr) { *(vvm::m4f*) ptr = m; });
+    _program.bindUniformBuffer("scene_data", _scene_ubo);
 }
 
 static constexpr vvm::m4f model_matrix(const vvm::v2f& size, const vvm::v2f& pos, float angle) {
@@ -72,17 +73,20 @@ static void write_obj_data(const ogu::buffer& ubo, const vvm::m4f& model, const 
 
 void renderer::draw_quad(const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
     write_obj_data(_objects_ubo, model_matrix(size, pos, angle), color);
+    _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_LINES, 0, 10);
 }
 
 void renderer::draw_filled_quad(const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
     write_obj_data(_objects_ubo, model_matrix(size, pos, angle), color);
+    _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 void renderer::draw_line(const vvm::v2f& p0, const vvm::v2f& p1, const vvm::v3f& color) {
     auto model = vvm::translate(p0) * vvm::m4f(vvm::m2f(p1 - p0, {0, 0})) * vvm::translate(vvm::v2f{0.5, 0.5});
     write_obj_data(_objects_ubo, model, color);
+    _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_LINES, 0, 2);
 }
 

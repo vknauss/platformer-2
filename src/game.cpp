@@ -1,9 +1,12 @@
 #include "game.h"
 
+#include <iostream>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
 #include <vvm/matrix_tfm.hpp>
+#include <vvm/string.hpp>
 
 #include "physics/physics.h"
 #include "render/render.h"
@@ -93,8 +96,6 @@ game::status test_game::update(float dt) {
 
     if (ks.key_pressed[GLFW_KEY_E]) draw_extra = !draw_extra;
     
-    ks.key_pressed.clear();
-
     vvm::v2f move_dir(0, 0);
     if (ks.key_down[GLFW_KEY_W]) {
         move_dir.y += 1;
@@ -111,13 +112,17 @@ game::status test_game::update(float dt) {
     if (vvm::dot(move_dir, move_dir) > 0)
         pw.velocities[player_id].linear += vvm::normalize(move_dir) * 15.0f * dt;
 
-    if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
+    //if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
+
+    ks.key_pressed.clear();
 
     return game::status::running;
 }
 
 void test_game::render(uint32_t width, uint32_t height) {
     auto proj = vvm::ortho(0.1f, (float) width / height);
+
+    // std::cout << vvm::to_string(proj) << std::endl;
 
     r.set_camera_matrix(proj);
     
