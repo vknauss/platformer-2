@@ -1,2 +1,2 @@
 target_sources(platformer PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/pass.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/render.cpp)
