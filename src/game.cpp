@@ -56,6 +56,16 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     }
 }
 
+static constexpr physics::rigid_body create_rigid_body(float mass, const vvm::v2f& pos, float angle, physics::id_t shape_id) {
+    physics::rigid_body result {};
+    result.mass = mass;
+    result.tfm.position = pos;
+    result.tfm.angle = angle;
+    result.shape_id = shape_id;
+    result.friction = 0.5;
+    return result;
+}
+
 void test_game::init(GLFWwindow* window) {
     w = window;
 
@@ -70,23 +80,20 @@ void test_game::init(GLFWwindow* window) {
     auto table_leg_shape_id = pw.add_collision_shape({.extents = {0.15, 0.5}});
 
     // 0 mass rigid bodies are static / kinematic: 1-way interaction with dynamic bodies
-    player_id = pw.add_rigid_body(1, {.position = {0, 0}, .angle = 0}, box_shape_id, 0.5);
+    player_id = pw.add_rigid_body(create_rigid_body(1.0, {0, 0}, 0, box_shape_id));
 
     // positive mass rigid bodies are dynamic
-    pw.add_rigid_body(1, {.position = {5, 0}}, box_shape_id, 0.5);
-    pw.add_rigid_body(1, {.position = {5, 2.5}}, box_shape_id, 0.5);
-    pw.add_rigid_body(1, {.position = {5, 5.0}}, box_shape_id, 0.5);
-    pw.add_rigid_body(1, {.position = {5, 8.0}}, box_shape_id, 0.5);
-    pw.add_rigid_body(1, {.position = {5, 11.0}}, box_shape_id, 0.5);
-    pw.add_rigid_body(1, {.position = {5, 14.0}}, box_shape_id, 0.5);
+    for (auto i = 0; i < 5; ++i) {
+        pw.add_rigid_body(create_rigid_body(1, {5, 2.5f * i}, 0, box_shape_id));
+    }
     
     // 0 mass bodies are static
-    pw.add_rigid_body(0, {.position = {0, -4}, .angle = 0.0}, ground_shape_id, 0.5);
+    pw.add_rigid_body(create_rigid_body(0.0, {0, -4}, 0, ground_shape_id));
 
     // add a table
-    pw.add_rigid_body(0.1, {.position = {-1.4, -2.5}}, table_leg_shape_id, 0.5);
-    pw.add_rigid_body(0.1, {.position = { 1.4, -2.5}}, table_leg_shape_id, 0.5);
-    pw.add_rigid_body(0.1, {.position = { 0.0, -1.95}}, table_shape_id, 0.5);
+    player_id = pw.add_rigid_body(create_rigid_body(1.0, {-1.4, -2.5}, 0, table_leg_shape_id));
+    player_id = pw.add_rigid_body(create_rigid_body(1.0, { 1.4, -2.5}, 0, table_leg_shape_id));
+    player_id = pw.add_rigid_body(create_rigid_body(1.0, { 0.0, -1.95}, 0, table_shape_id));
 }
 
 game::status test_game::update(float dt) {
@@ -110,9 +117,11 @@ game::status test_game::update(float dt) {
         move_dir.x += 1;
     }
     if (vvm::dot(move_dir, move_dir) > 0)
-        pw.velocities[player_id].linear += vvm::normalize(move_dir) * 15.0f * dt;
+        pw.apply_impulse(player_id, vvm::normalize(move_dir) * 15.0f * dt, {0, 0});
 
-    //if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
+    // if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
+    if (!pause) pw.update(dt, 5);
+    else if (ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 5);
 
     ks.key_pressed.clear();
 
@@ -126,8 +135,9 @@ void test_game::render(uint32_t width, uint32_t height) {
 
     r.set_camera_matrix(proj);
     
-    for (int i = 0; i < pw.num_bodies; ++i) {
-        const auto& t = pw.cw.transforms[i];
+    for (auto i = 0u; i < pw.num_bodies; ++i) {
+        auto rb = pw.get_rigid_body(i)
+        const auto& t = pw.get_transform(i);
         const auto& s = pw.cw.collision_shapes[pw.cw.shape_ids[i]];
         r.draw_quad(2.0f * s.extents, t.position, t.angle, {1, 1, 1});
         const auto& b = pw.cw.aabbs[i];
@@ -146,7 +156,7 @@ void test_game::render(uint32_t width, uint32_t height) {
         auto bmax = vvm::max(b0.max_extent, b1.max_extent);
         auto ext = bmax - bmin;
         auto pos = (bmax + bmin) * 0.5f;
-        r.draw_filled_quad(ext, pos, 0, {1, 1, 0});
+        r.draw_quad(ext, pos, 0, {1, 1, 0});
     };
 
     for (const auto& pair : pw.cw.np.pairs()) {
@@ -191,4 +201,6 @@ void test_game::render(uint32_t width, uint32_t height) {
             r.draw_filled_quad({0.1, 0.1}, p, 0, {1, 0, 1});
         }
     }
+
+    r.render();
 }

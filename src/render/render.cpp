@@ -6,6 +6,9 @@
 
 #define SHADER_PATH(X) SHADERS_DIR "/" X
 
+// for testing. enabling this will make rendering significantly slower
+#define RENDER_IMMEDIATE 0
+
 
 namespace render {
 
@@ -72,22 +75,60 @@ static void write_obj_data(const ogu::buffer& ubo, const vvm::m4f& model, const 
 }
 
 void renderer::draw_quad(const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
+    auto model = model_matrix(size, pos, angle);
+    #if RENDER_IMMEDIATE == 1
     write_obj_data(_objects_ubo, model_matrix(size, pos, angle), color);
     _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_LINES, 0, 10);
+    #else
+    _draw_calls.push_back({model, color, GL_LINES, 10});
+    #endif
 }
 
 void renderer::draw_filled_quad(const vvm::v2f& size, const vvm::v2f& pos, float angle, const vvm::v3f color) {
-    write_obj_data(_objects_ubo, model_matrix(size, pos, angle), color);
+    auto model = model_matrix(size, pos, angle);
+    #if RENDER_IMMEDIATE == 1
+    write_obj_data(_objects_ubo, model, color);
     _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    #else
+    _draw_calls.push_back({model, color, GL_TRIANGLE_STRIP, 4});
+    #endif
 }
 
 void renderer::draw_line(const vvm::v2f& p0, const vvm::v2f& p1, const vvm::v3f& color) {
     auto model = vvm::translate(p0) * vvm::m4f(vvm::m2f(p1 - p0, {0, 0})) * vvm::translate(vvm::v2f{0.5, 0.5});
+    #if RENDER_IMMEDIATE == 1
     write_obj_data(_objects_ubo, model, color);
     _program.bindUniformBuffer("obj_data", _objects_ubo);
     glDrawArrays(GL_LINES, 0, 2);
+    #else
+    _draw_calls.push_back({model, color, GL_LINES, 2});
+    #endif
+}
+
+void renderer::render() {
+    #if RENDER_IMMEDIATE == 1
+    return;
+    #endif
+
+    auto obj_data_size = sizeof(vvm::m4f) + sizeof(vvm::v4f);
+
+    _objects_ubo.write(0, _draw_calls.size() * obj_data_size, [this] (void* ptr) {
+        for (const auto& call : _draw_calls) {
+            *(vvm::m4f*) ptr = call.tfm;
+            ptr = (char*) ptr + sizeof(vvm::m4f);
+            *(vvm::v3f*) ptr = call.color;
+            ptr = (char*) ptr + sizeof(vvm::v4f);  // v4f because std140
+        }
+    });
+
+    for (auto i = 0u; i < _draw_calls.size(); ++i) {
+        _program.bindUniformBuffer("obj_data", _objects_ubo, i * obj_data_size, obj_data_size);
+        glDrawArrays(_draw_calls[i].mode, 0, _draw_calls[i].count);
+    }
+
+    _draw_calls.clear();
 }
 
 }

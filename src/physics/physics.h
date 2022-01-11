@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "storage.h"
+#include "ecs.h"
+
 
 namespace physics {
 
@@ -18,6 +20,7 @@ constexpr id_t ID_NULL = std::numeric_limits<id_t>::max();
 
 using v2 = vvm::v2<real_t>;
 using m2 = vvm::m2<real_t>;
+
 
 struct collision_shape {
     v2 extents;
@@ -31,6 +34,18 @@ struct transform {
 struct velocity {
     v2 linear;
     real_t angular;
+};
+
+struct collision_object {
+    transform tfm;
+    id_t shape_id;
+};
+
+struct rigid_body {
+    transform tfm;
+    velocity vel;
+    real_t mass, inertia, friction;
+    id_t shape_id;
 };
 
 struct aabb {
@@ -111,7 +126,13 @@ private:
 
 };
 
-struct collision_world {
+struct world {
+
+};
+
+class collision_world {
+    friend class dynamics_world;
+
     // shapes
     std::vector<collision_shape> collision_shapes;
 
@@ -127,11 +148,20 @@ struct collision_world {
     broadphase bp;
     narrowphase np;
 
+public:
+
     // methods
 
     id_t add_collision_shape(const collision_shape& shape);
-    id_t add_collision_object(const transform& tfm, id_t shape_id);
+    id_t add_collision_object(const collision_object& obj);
 
+    const broadphase& get_broadphase() const {
+        return bp;
+    }
+
+    const narrowphase& get_narrowphase() const {
+        return np;
+    }
 
     void update();
 
@@ -158,11 +188,7 @@ struct contact_solver_pair {
     real_t friction;
 };
 
-struct contact_pair_cache {
-
-};
-
-struct contact_solver {
+class contact_solver {
     real_t allowed_penetration = 0.01, bias = 0.1;
 
     std::vector<contact_constraint> ccs;
@@ -171,7 +197,7 @@ struct contact_solver {
     std::vector<contact_solver_pair> oldsps;
     std::vector<id_t> sort_ids;
 
-    // mapped_storage<contact_constraint> cmap;
+public:
 
     void update_constraints(const std::vector<collision_pair>& ps,
                             const std::vector<contact>& cs,
@@ -190,7 +216,7 @@ struct contact_solver {
                std::vector<velocity>& vels);
 };
 
-struct dynamics_world {
+class dynamics_world {
 
     // more body data
     std::vector<velocity> velocities;
@@ -198,16 +224,33 @@ struct dynamics_world {
     std::vector<real_t> iinertias;
     std::vector<real_t> frictions;
 
+    std::vector<transform> prev_tfms;
+    std::vector<transform> interp_tfms;
+
     collision_world cw;
 
     contact_solver solver;
 
     size_t num_bodies;
+
+    real_t interp;
+
+public:
     
     id_t add_collision_shape(const collision_shape& shape);
-    id_t add_rigid_body(real_t mass, const transform& tfm, id_t shape_id, real_t friction);
+    id_t add_rigid_body(const rigid_body& body);
+
+    void apply_impulse(id_t body_id, const v2& impulse, const v2& offset);
 
     void step(real_t dt, int iterations);
+
+    void update(real_t dt, int iterations);
+
+    rigid_body get_rigid_body(id_t id) const;
+
+    const collision_world& get_collision_world() const {
+        return cw;
+    }
 
     dynamics_world();
     virtual ~dynamics_world();

@@ -457,11 +457,11 @@ id_t collision_world::add_collision_shape(const collision_shape& shape) {
     return id;
 }
 
-id_t collision_world::add_collision_object(const transform& tfm, id_t shape_id) {
-    assert(shape_id < collision_shapes.size());
+id_t collision_world::add_collision_object(const collision_object& obj) {
+    assert(obj.shape_id < collision_shapes.size());
     id_t id = num_bodies++;
-    transforms.push_back(tfm);
-    shape_ids.push_back(shape_id);
+    transforms.push_back(obj.tfm);
+    shape_ids.push_back(obj.shape_id);
     return id;
 }
 

@@ -43,25 +43,6 @@ static constexpr real_t effective_mass(real_t im0, real_t im1, real_t ii0, real_
     return 1.0 / denom;
 }
 
-struct rbdata {
-    real_t imass, iinertia;
-    v2 pos, vel;
-    real_t rot, vrot;
-    real_t friction;
-};
-
-struct cdata {
-    aabb bound;
-    id_t shapeid;
-};
-
-
-
-struct world {
-    std::vector<rbdata> bodies;
-
-};
-
 template<typename pair_t>
 static id_t find_pair(id_t i0, id_t i1, const std::vector<pair_t>& ccs) {
     id_t pos = ccs.size() / 2;
@@ -234,6 +215,10 @@ void contact_solver::solve(const std::vector<real_t>& im, const std::vector<real
     }
 }
 
+static void step(real_t dt, int iterations, world& w) {
+
+}
+
 void dynamics_world::step(real_t dt, int iterations) {
     cw.update();
     
@@ -255,29 +240,74 @@ void dynamics_world::step(real_t dt, int iterations) {
     }
 }
 
+void dynamics_world::update(real_t dt, int iterations) {
+    static const real_t timestep = 1.0 / 60.0;
+    
+    interp += dt / timestep;
+    
+    while (interp > 2.0) {
+        step(timestep, iterations);
+        interp -= 1.0;
+    }
+    
+    if (interp > 1.0) {
+        prev_tfms = cw.transforms;
+        step(timestep, iterations);
+        interp -= 1.0;
+    }
+    
+    auto minsize = std::min(prev_tfms.size(), cw.transforms.size());
+    // auto maxsize = std::max(prev_tfms.size(), cw.transforms.size());
+
+    interp_tfms.resize(cw.transforms.size());
+    for (auto i = 0u; i < minsize; ++i) {
+        interp_tfms[i].angle = prev_tfms[i].angle * (1.0 - interp) + cw.transforms[i].angle * interp;
+        interp_tfms[i].position = vvm::lerp(prev_tfms[i].position, cw.transforms[i].position, interp);
+    }
+    for (auto i = minsize; i < interp_tfms.size(); ++i) {
+        interp_tfms[i] = cw.transforms[i];
+    }
+}
+
+rigid_body dynamics_world::get_rigid_body(id_t id) const {
+    rigid_body body {};
+    body.tfm = interp_tfms[id];
+    body.vel = velocities[id];
+    body.friction = frictions[id];
+    body.mass = (imasses[id] == 0) ? 0.0 : 1.0 / imasses[id];
+    body.inertia = (iinertias[id] == 0) ? 0.0 : 1.0 / iinertias[id];
+    body.shape_id = cw.shape_ids[id];
+    return body;
+}
+
 id_t dynamics_world::add_collision_shape(const collision_shape &shape) {
     return cw.add_collision_shape(shape);
 }
 
-id_t dynamics_world::add_rigid_body(real_t mass, const transform& tfm, id_t shape_id, real_t friction) {
-    auto id = cw.add_collision_object(tfm, shape_id);
+id_t dynamics_world::add_rigid_body(const rigid_body& body) {
+    auto id = cw.add_collision_object({body.tfm, body.shape_id});
     ++num_bodies;
     if (cw.num_bodies != num_bodies) std::cerr << "!" << std::endl;
     
-    real_t imass = mass > 0 ? 1.0 / mass : 0.0;
+    real_t imass = body.mass > 0 ? 1.0 / body.mass : 0.0;
     const auto& e = cw.collision_shapes[cw.shape_ids[id]].extents;
     auto dd = vvm::dot(e, e);
     real_t iinertia = dd > 0 ? 3.0 * imass / dd : 0.0;
     
     imasses.push_back(imass);
     iinertias.push_back(iinertia);
-    velocities.push_back({.linear = {0, 0}, .angular = 0});
-    frictions.push_back(friction);
+    velocities.push_back(body.vel);
+    frictions.push_back(body.friction);
     
     return id;
 }
 
-dynamics_world::dynamics_world() : num_bodies(0) { }
+void dynamics_world::apply_impulse(id_t body_id, const v2& impulse, const v2& offset) {
+    velocities[body_id].linear += imasses[body_id] * impulse;
+    velocities[body_id].angular += iinertias[body_id] * vvm::cross(offset, impulse);
+}
+
+dynamics_world::dynamics_world() : num_bodies(0), interp(0) { }
 dynamics_world::~dynamics_world() { }
 
 };  // namespace physics

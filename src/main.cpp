@@ -67,9 +67,11 @@ static void run(GLFWwindow* window) {
 
     g->init(window);
 
-    glfwSwapInterval(1);
+    // glfwSwapInterval(1);
 
     auto time = glfwGetTimerValue();
+    auto fps_timer = time;
+    int frames = 0;
 
     game::status status = game::status::running;
     while (status == game::status::running) {
@@ -78,6 +80,13 @@ static void run(GLFWwindow* window) {
         auto lastTime = time;
         time = glfwGetTimerValue();
         float dt = (double) (time - lastTime) / glfwGetTimerFrequency();
+
+        if (time - fps_timer >= glfwGetTimerFrequency()) {
+            glfwSetWindowTitle(window, (std::string("FPS: ") + std::to_string(frames)).c_str());
+            fps_timer = time;
+            frames = 0;
+        }
+        ++frames;
 
         status = g->update(dt);
 
