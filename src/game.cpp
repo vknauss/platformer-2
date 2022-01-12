@@ -25,10 +25,15 @@ class test_game : public game {
 
     physics::dynamics_world pw;
 
+    physics::id_t box_shape_id;
+
     bool pause = false;
     bool draw_extra = false;
 
-    physics::id_t player_id;
+    ecs::entity player;
+
+    ecs::entity_manager em;
+    ecs::packed_array<physics::id_t, 1000, 32> rb_ids;
 
 public:
 
@@ -74,26 +79,40 @@ void test_game::init(GLFWwindow* window) {
     glfwSetKeyCallback(w, key_callback);
 
     // create some collision shapes
-    auto box_shape_id = pw.add_collision_shape({.extents = {0.5, 0.5}});
+    box_shape_id = pw.add_collision_shape({.extents = {0.5, 0.5}});
     auto ground_shape_id = pw.add_collision_shape({.extents = {10, 1}});
     auto table_shape_id = pw.add_collision_shape({.extents = {1.5, 0.05}});
     auto table_leg_shape_id = pw.add_collision_shape({.extents = {0.15, 0.5}});
 
     // 0 mass rigid bodies are static / kinematic: 1-way interaction with dynamic bodies
-    player_id = pw.add_rigid_body(create_rigid_body(1.0, {0, 0}, 0, box_shape_id));
+    player = em.create();
+    auto player_rb_id = pw.add_rigid_body(create_rigid_body(1.0, {0, 0}, 0, box_shape_id));
+    rb_ids.insert(player, player_rb_id);
 
     // positive mass rigid bodies are dynamic
     for (auto i = 0; i < 5; ++i) {
-        pw.add_rigid_body(create_rigid_body(1, {5, 2.5f * i}, 0, box_shape_id));
+        auto box = em.create();
+        auto box_rb_id = pw.add_rigid_body(create_rigid_body(1, {5, 2.5f * i}, 0, box_shape_id));
+        rb_ids.insert(box, box_rb_id);
     }
     
     // 0 mass bodies are static
-    pw.add_rigid_body(create_rigid_body(0.0, {0, -4}, 0, ground_shape_id));
+    auto ground = em.create();
+    auto ground_rb_id = pw.add_rigid_body(create_rigid_body(0.0, {0, -4}, 0, ground_shape_id));
+    rb_ids.insert(ground, ground_rb_id);
 
     // add a table
-    player_id = pw.add_rigid_body(create_rigid_body(1.0, {-1.4, -2.5}, 0, table_leg_shape_id));
-    player_id = pw.add_rigid_body(create_rigid_body(1.0, { 1.4, -2.5}, 0, table_leg_shape_id));
-    player_id = pw.add_rigid_body(create_rigid_body(1.0, { 0.0, -1.95}, 0, table_shape_id));
+    auto table_leg1 = em.create();
+    auto table_leg1_rb_id = pw.add_rigid_body(create_rigid_body(1.0, {-1.4, -2.5}, 0, table_leg_shape_id));
+    rb_ids.insert(table_leg1, table_leg1_rb_id);
+
+    auto table_leg2 = em.create();
+    auto table_leg2_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 1.4, -2.5}, 0, table_leg_shape_id));
+    rb_ids.insert(table_leg2, table_leg2_rb_id);
+    
+    auto table_top = em.create();
+    auto table_top_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 0.0, -1.95}, 0, table_shape_id));
+    rb_ids.insert(table_top, table_top_rb_id);
 }
 
 game::status test_game::update(float dt) {
@@ -117,11 +136,20 @@ game::status test_game::update(float dt) {
         move_dir.x += 1;
     }
     if (vvm::dot(move_dir, move_dir) > 0)
-        pw.apply_impulse(player_id, vvm::normalize(move_dir) * 15.0f * dt, {0, 0});
+        pw.apply_impulse(rb_ids.get(player), vvm::normalize(move_dir) * 15.0f * dt, {0, 0});
 
     // if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
     if (!pause) pw.update(dt, 5);
     else if (ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 5);
+
+    if (ks.key_pressed[GLFW_KEY_G]) {
+        auto rb = create_rigid_body(1, {0, 0}, (float) rand() / RAND_MAX, box_shape_id);
+        auto vela = (float) rand() / RAND_MAX;
+        rb.vel.linear = 10.f * (float) rand() / RAND_MAX * vvm::rotate(vela)[0];
+        auto e = em.create();
+        auto rbi = pw.add_rigid_body(rb);
+        rb_ids.insert(e, rbi);
+    }
 
     ks.key_pressed.clear();
 
@@ -131,76 +159,61 @@ game::status test_game::update(float dt) {
 void test_game::render(uint32_t width, uint32_t height) {
     auto proj = vvm::ortho(0.1f, (float) width / height);
 
-    // std::cout << vvm::to_string(proj) << std::endl;
-
     r.set_camera_matrix(proj);
     
-    for (auto i = 0u; i < pw.num_bodies; ++i) {
-        auto rb = pw.get_rigid_body(i)
-        const auto& t = pw.get_transform(i);
-        const auto& s = pw.cw.collision_shapes[pw.cw.shape_ids[i]];
-        r.draw_quad(2.0f * s.extents, t.position, t.angle, {1, 1, 1});
-        const auto& b = pw.cw.aabbs[i];
-        if (draw_extra) {
-            auto ext = b.max_extent - b.min_extent;
-            auto pos = (b.max_extent + b.min_extent) * 0.5f;
-            r.draw_quad(ext, pos, 0, {1, 0.25, 0});
-        }
-    }
+    em.for_each([this] (ecs::entity e) {
+        auto b = pw.get_rigid_body(rb_ids.get(e));
+        auto s = pw.get_collision_shape(b.shape_id);
+        r.draw_quad(2.f * s.extents, b.tfm.position, b.tfm.angle, {1, 1, 1});
+    });
 
-    if (draw_extra)
-    for (const auto& pair : pw.cw.bp.pairs()) {
-        const auto& b0 = pw.cw.aabbs[pair.first];
-        const auto& b1 = pw.cw.aabbs[pair.second];
-        auto bmin = vvm::min(b0.min_extent, b1.min_extent);
-        auto bmax = vvm::max(b0.max_extent, b1.max_extent);
-        auto ext = bmax - bmin;
-        auto pos = (bmax + bmin) * 0.5f;
-        r.draw_quad(ext, pos, 0, {1, 1, 0});
-    };
+    if (draw_extra) {
+        const auto& cw = pw.get_collision_world();
 
-    for (const auto& pair : pw.cw.np.pairs()) {
-        const auto& t0 = pw.cw.transforms[pair.i0];
-        const auto& t1 = pw.cw.transforms[pair.i1];
-        const auto& s0 = pw.cw.collision_shapes[pw.cw.shape_ids[pair.i0]];
-        const auto& s1 = pw.cw.collision_shapes[pw.cw.shape_ids[pair.i1]];
+        for (const auto& pair : cw.get_narrowphase().pairs()) {
+            auto b0 = pw.get_rigid_body(pair.i0), b1 = pw.get_rigid_body(pair.i1);
+            auto s0 = pw.get_collision_shape(b0.shape_id), s1 = pw.get_collision_shape(b1.shape_id);
         
-        if (draw_extra) {
+        
             r.draw_line(pair.incident_face_points[0], pair.incident_face_points[1], {0, 1, 1});
             r.draw_line(pair.reference_face_points[0], pair.reference_face_points[1], {0, 0, 1});
-        }
+            
 
-        vvm::v2f p1, p2;
-        if (pair.feature.b0_reference) {
-            switch (pair.feature.ref_axis) {
-            case physics::axis_id::x:
-                p1 = t0.position + pair.normal * s0.extents.x;
-                break;
-            case physics::axis_id::y:
-                p1 = t0.position + pair.normal * s0.extents.y;
-                break;
+            vvm::v2f p1, p2;
+            if (pair.feature.b0_reference) {
+                switch (pair.feature.ref_axis) {
+                case physics::axis_id::x:
+                    p1 = b0.tfm.position + pair.normal * s0.extents.x;
+                    break;
+                case physics::axis_id::y:
+                    p1 = b0.tfm.position + pair.normal * s0.extents.y;
+                    break;
+                }
+                p2 = p1 + pair.normal;
+            } else {
+                switch (pair.feature.ref_axis) {
+                case physics::axis_id::x:
+                    p1 = b1.tfm.position - pair.normal * s1.extents.x;
+                    break;
+                case physics::axis_id::y:
+                    p1 = b1.tfm.position - pair.normal * s1.extents.y;
+                    break;
+                }
+                p2 = p1 - pair.normal;
             }
-            p2 = p1 + pair.normal;
-        } else {
-            switch (pair.feature.ref_axis) {
-            case physics::axis_id::x:
-                p1 = t1.position - pair.normal * s1.extents.x;
-                break;
-            case physics::axis_id::y:
-                p1 = t1.position - pair.normal * s1.extents.y;
-                break;
+
+            auto color = pair.num_contacts > 0 ? vvm::v3f(1, 0, 0) : vvm::v3f(0, 1, 0);
+            r.draw_line(p1, p2, color);
+
+            for (int i = 0; i < pair.num_contacts; ++i) {
+                auto p = cw.get_narrowphase().contacts()[pair.contact_ids[i]].position;
+                r.draw_filled_quad({0.1, 0.1}, p, 0, {1, 0, 1});
             }
-            p2 = p1 - pair.normal;
-        }
-
-        auto color = pair.num_contacts > 0 ? vvm::v3f(1, 0, 0) : vvm::v3f(0, 1, 0);
-        r.draw_line(p1, p2, color);
-
-        for (int i = 0; i < pair.num_contacts; ++i) {
-            auto p = pw.cw.np.contacts()[pair.contact_ids[i]].position;
-            r.draw_filled_quad({0.1, 0.1}, p, 0, {1, 0, 1});
         }
     }
+    
+
+    
 
     r.render();
 }

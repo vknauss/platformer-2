@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 
 
 namespace ecs {
@@ -21,22 +22,22 @@ struct packed_array {
     }
 
     const T& get(unsigned int index) const {
-        static_assert(index < MAX_INDICES, "get() (const): index out of bounds");
+        assert(index < MAX_INDICES && "get() (const): index out of bounds");
         return data[indices[index]];
     }
 
     T& get(unsigned int index) {
-        static_assert(index < MAX_INDICES, "get(): index out of bounds");
+        assert(index < MAX_INDICES && "get(): index out of bounds");
         return data[indices[index]];
     }
 
     bool has(unsigned int index) const {
-        static_assert(index < MAX_INDICES, "has(): index out of bounds");
+        assert(index < MAX_INDICES && "has(): index out of bounds");
         return indices[index] != MAX_ELEMENTS;
     }
 
     void insert(unsigned int index, const T& t) {
-        static_assert(numElements < MAX_ELEMENTS, "too many elements. cant insert");
+        assert(numElements < MAX_ELEMENTS && "too many elements. cant insert");
         indices[index] = numElements;
         elementIndices[numElements] = index;
         data[numElements++] = t;
@@ -69,6 +70,9 @@ public:
     entity create();
 
     void destroy(entity e);
+
+    template <typename Fn>
+    void for_each(const Fn& fn) const;
 
 private:
 
@@ -119,6 +123,19 @@ inline void entity_manager::destroy(entity e) {
         _entityAliveBitBuffer[e/8] &= 0xFF - (1 << e%8);
         _freeIndices[(_firstFreeIndex + _numFreeIndices) % FREE_LIST_SIZE] = e;
         ++_numFreeIndices;
+    }
+}
+
+template <typename Fn>
+inline void entity_manager::for_each(const Fn& fn) const {
+    auto max = _numEntities/8 + (unsigned int) (_numEntities%8 > 0);
+    for (auto i = 0u; i < max; ++i) {
+        auto bits = _entityAliveBitBuffer[i];
+        entity base = i * 8;
+        for (auto j = 0u; j < 8u; ++j) {
+            if ((bits >> j) & 1)
+                fn(base + j);
+        }
     }
 }
 

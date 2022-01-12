@@ -215,10 +215,6 @@ void contact_solver::solve(const std::vector<real_t>& im, const std::vector<real
     }
 }
 
-static void step(real_t dt, int iterations, world& w) {
-
-}
-
 void dynamics_world::step(real_t dt, int iterations) {
     cw.update();
     

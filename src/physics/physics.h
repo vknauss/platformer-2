@@ -126,10 +126,6 @@ private:
 
 };
 
-struct world {
-
-};
-
 class collision_world {
     friend class dynamics_world;
 
@@ -247,6 +243,10 @@ public:
     void update(real_t dt, int iterations);
 
     rigid_body get_rigid_body(id_t id) const;
+
+    const collision_shape& get_collision_shape(id_t id) const {
+        return cw.collision_shapes[id];
+    }
 
     const collision_world& get_collision_world() const {
         return cw;
