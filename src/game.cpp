@@ -33,7 +33,7 @@ class test_game : public game {
     ecs::entity player;
 
     ecs::entity_manager em;
-    ecs::packed_array<physics::id_t, 1000, 32> rb_ids;
+    ecs::packed_array<physics::id_t, 100000, 100000> rb_ids;
 
 public:
 

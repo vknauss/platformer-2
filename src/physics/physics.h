@@ -7,166 +7,17 @@
 #include <map>
 #include <vector>
 
-#include "storage.h"
-#include "ecs.h"
+#include "types.h"
 
 
 namespace physics {
 
-typedef float real_t;
-
-typedef unsigned int id_t;
-constexpr id_t ID_NULL = std::numeric_limits<id_t>::max();
-
-using v2 = vvm::v2<real_t>;
-using m2 = vvm::m2<real_t>;
 
 
-struct collision_shape {
-    v2 extents;
-};
 
-struct transform {
-    v2 position;
-    real_t angle;
-};
 
-struct velocity {
-    v2 linear;
-    real_t angular;
-};
 
-struct collision_object {
-    transform tfm;
-    id_t shape_id;
-};
 
-struct rigid_body {
-    transform tfm;
-    velocity vel;
-    real_t mass, inertia, friction;
-    id_t shape_id;
-};
-
-struct aabb {
-    v2 min_extent, max_extent;
-};
-
-enum class axis_id : uint8_t {
-    x, y
-};
-
-enum class face_id : uint8_t {
-    pos_x, neg_x, pos_y, neg_y
-};
-
-struct contact_feature {
-    face_id b0_face, b1_face;
-    axis_id ref_axis;
-    bool b0_reference, point_side_pos;
-
-    bool operator==(const contact_feature& f) const;
-};
-
-struct collision_pair {
-    id_t i0, i1;
-
-    id_t contact_ids[2];
-    int num_contacts;
-
-    v2 normal;
-    v2 tangent;
-
-    real_t depth;
-
-    contact_feature feature;
-
-    v2 incident_face_points[2];
-    v2 reference_face_points[2];
-};
-
-struct contact {
-    v2 position;
-    real_t depth;
-    contact_feature feature;
-};
-
-class broadphase {
-public:
-    using pair = std::pair<id_t, id_t>;
-
-    const std::vector<pair>& pairs() const;
-
-    void update(const std::vector<aabb>& aabbs);
-
-private:
-    std::vector<id_t> _sort_ids;
-    std::vector<id_t> _intervals;
-
-    std::vector<pair> _pairs;
-};
-
-class narrowphase {
-public:
-
-    const std::vector<collision_pair>& pairs() const;
-    const std::vector<contact>& contacts() const;
-
-    void update(const std::vector<broadphase::pair>& bpairs, 
-        const std::vector<collision_shape>& shapes,
-        const std::vector<transform>& tfms,
-        const std::vector<id_t>& shape_ids);
-
-private:
-
-    std::vector<collision_pair> _pairs;
-    std::vector<collision_pair> _old_pairs;
-
-    std::vector<contact> _contacts;
-
-};
-
-class collision_world {
-    friend class dynamics_world;
-
-    // shapes
-    std::vector<collision_shape> collision_shapes;
-
-    // bodies' data
-    std::vector<transform> transforms;
-    std::vector<id_t> shape_ids;
-    std::vector<aabb> aabbs;
-    size_t num_bodies;
-
-    // std::vector<collision_pair> pairs;
-    // std::vector<contact> contacts;
-
-    broadphase bp;
-    narrowphase np;
-
-public:
-
-    // methods
-
-    id_t add_collision_shape(const collision_shape& shape);
-    id_t add_collision_object(const collision_object& obj);
-
-    const broadphase& get_broadphase() const {
-        return bp;
-    }
-
-    const narrowphase& get_narrowphase() const {
-        return np;
-    }
-
-    void update();
-
-    // ctrs/dtrs
-    
-    collision_world();
-    virtual ~collision_world();
-
-};
 
 struct contact_constraint {
     id_t i0, i1;
@@ -244,9 +95,9 @@ public:
 
     rigid_body get_rigid_body(id_t id) const;
 
-    const collision_shape& get_collision_shape(id_t id) const {
-        return cw.collision_shapes[id];
-    }
+    // const collision_shape& get_collision_shape(id_t id) const {
+    //     return cw.collision_shapes[id];
+    // }
 
     const collision_world& get_collision_world() const {
         return cw;

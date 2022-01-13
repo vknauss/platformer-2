@@ -283,7 +283,6 @@ id_t dynamics_world::add_collision_shape(const collision_shape &shape) {
 id_t dynamics_world::add_rigid_body(const rigid_body& body) {
     auto id = cw.add_collision_object({body.tfm, body.shape_id});
     ++num_bodies;
-    if (cw.num_bodies != num_bodies) std::cerr << "!" << std::endl;
     
     real_t imass = body.mass > 0 ? 1.0 / body.mass : 0.0;
     const auto& e = cw.collision_shapes[cw.shape_ids[id]].extents;

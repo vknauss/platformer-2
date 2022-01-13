@@ -1,9 +1,12 @@
-#include "physics.h"
+#include "collision.h"
 
 #include <cassert>
 #include <cmath>
 
+#include <algorithm>
 #include <iostream>
+#include <map>
+#include <vector>
 
 #include <vvm/matrix_tfm.hpp>
 #include <vvm/string.hpp>
@@ -11,6 +14,10 @@
 
 namespace physics {
 
+
+struct aabb {
+    v2 min_extent, max_extent;
+};
 
 // showing my work:
 // if every shape is a box transformed around its center,
@@ -28,17 +35,100 @@ namespace physics {
 // since x and y are positive, max = [x*abs(ca) + y*abs(sa), x*abs(sa) + y*abs(ca)]
 // therefore: max = abs(rot(a)) * [x, y]
 // the aabb is then: { position - max, position + max }
-static constexpr aabb get_shape_aabb(const collision_shape& shape, const transform& t) {
+static constexpr aabb get_shape_aabb(const v2& extents, const transform& t) {
     m2 rot = vvm::rotate(t.angle);
     m2 absRot = vvm::abs(rot);
 
     aabb b;
-    b.max_extent = absRot * shape.extents;
+    b.max_extent = absRot * extents;
     b.min_extent = t.position - b.max_extent;
     b.max_extent += t.position;
 
     return b;
 }
+
+
+class collision_world::impl {
+public:
+    // shapes' data
+    std::vector<collision_shape::type> shape_types;
+    std::vector<id_t> shape_data_id;
+    std::vector<v2> box_extents;
+    std::vector<real_t> circle_radii;
+
+    // bodies' data
+    std::vector<transform> transforms;
+    std::vector<id_t> shape_ids;
+    std::vector<aabb> aabbs;
+    size_t num_bodies;
+
+    // results
+    std::vector<collision_pair> pairs;
+    std::vector<contact> contacts;
+    
+    // internal data
+    struct {
+        std::vector<id_t> sort_ids;
+        std::vector<id_t> intervals;
+        std::vector<std::pair<id_t, id_t>> pairs;
+    } broad_phase_data;
+
+    struct {
+        std::vector<collision_pair> old_pairs;
+        std::vector<id_t> sort_ids;
+    } narrow_phase_data;
+
+    // methods
+
+    id_t add_collision_shape(const collision_shape& shape) {
+        id_t id = (id_t) shape_types.size();
+        shape_types.push_back(shape.get_type());
+        switch (shape.get_type()) {
+        case collision_shape::type::circle: {
+            auto cshape = static_cast<const circle_collision_shape*>(&shape);
+            shape_data_id.push_back((id_t) circle_radii.size());
+            circle_radii.push_back(cshape->radius);
+            break;
+        }
+        case collision_shape::type::box: {
+            auto bshape = static_cast<const box_collision_shape*>(&shape);
+            shape_data_id.push_back((id_t) box_extents.size());
+            box_extents.push_back(bshape->extents);
+            break;
+        }
+        }
+        return id;
+    }
+
+    id_t add_collision_object(const collision_object& obj) {
+        id_t id = (id_t) (num_bodies++);
+        transforms.push_back(obj.tfm);
+        shape_ids.push_back(obj.shape_id);
+        switch (shape_types[obj.shape_id]) {
+        case collision_shape::type::box:
+            aabbs.push_back(get_shape_aabb(box_extents[shape_data_id[obj.shape_id]], obj.tfm));
+            break;
+        case collision_shape::type::circle:
+            aabbs.push_back(get_shape_aabb(v2(circle_radii[shape_data_id[obj.shape_id]]), obj.tfm));
+            break;
+        }
+        return id;
+    }
+
+    void broad_phase();
+
+    void narrow_phase();
+
+    void update();
+
+    // ctrs/dtrs
+    
+    impl();
+    ~impl();
+
+};
+
+
 
 static constexpr bool aabbs_intersect(const aabb& b0, const aabb& b1) {
     return b0.max_extent.x >= b1.min_extent.x && b0.min_extent.x <= b1.max_extent.x &&
@@ -73,7 +163,7 @@ struct sat_data {
     bool b0_reference;
 };
 
-static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1,
+static sat_data box_box_sat(const v2& e0, const v2& e1,
                             const transform& t0, const transform& t1) {
     // separating axis theorem
     // test the projection of each shape onto each of the face normal axes of both shapes
@@ -109,12 +199,12 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
     // by absing this matrix, we can get the length of the projections of b1 onto the axes of b0
     m2 r1to0 = r0t * r1;
     m2 ar10 = vvm::abs(r1to0);
-    v2 e10 = ar10 * s1.extents;  // the half extents of b1 in the rotated frame of b0
+    v2 e10 = ar10 * e1;  // the half extents of b1 in the rotated frame of b0
     
     result.b0_reference = true;
 
     // test b0 x axis
-    auto depth = result.depth = std::abs(d0.x) - s0.extents.x - e10.x;
+    auto depth = result.depth = std::abs(d0.x) - e0.x - e10.x;
     result.normal = r0[0];
     result.reference_face = face_id::pos_x;
     result.reference_axis = axis_id::x;
@@ -127,7 +217,7 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
     }
 
     // test b0 y axis
-    depth = std::abs(d0.y) - s0.extents.y - e10.y;
+    depth = std::abs(d0.y) - e0.y - e10.y;
     if (depth > result.depth) {
         result.depth = depth;
         result.normal = r0[1];
@@ -143,11 +233,11 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
     // test b1 axes
     // we can just transpose ar10 to get abs(r1t * r0)
     m2 ar01 = vvm::transpose(ar10);
-    v2 e01 = ar01 * s0.extents;
+    v2 e01 = ar01 * e0;
 
 
     // test b1 x axis
-    depth = std::abs(d1.x) - s1.extents.x - e01.x;
+    depth = std::abs(d1.x) - e1.x - e01.x;
     if (depth > result.depth) {
         result.depth = depth;
         result.b0_reference = false;
@@ -162,7 +252,7 @@ static sat_data compute_sat(const collision_shape& s0, const collision_shape& s1
     }
 
     // test b1 y axis
-    depth = std::abs(d1.y) - s1.extents.y - e01.y;
+    depth = std::abs(d1.y) - e1.y - e01.y;
     if (depth > result.depth) {
         result.depth = depth;
         result.b0_reference = false;
@@ -254,19 +344,16 @@ struct clip_data {
     real_t min, max;
 };
 
-// these are the most disgusting function signatures ever
-// definitely need a refactor at some point
-// these should maybe be class methods, possibly using pimpl
 // return the number of contact points generated
-static int find_contact_points(contact c[2], const collision_pair& p, const collision_shape& s0, const collision_shape& s1, const transform& t0, const transform& t1) {
+static int box_box_contact_points(contact c[2], const collision_pair& p, const v2& e0, const v2& e1, const transform& t0, const transform& t1) {
     const v2& p0 = t0.position;
     const v2& p1 = t1.position;
     
     a_couple_points incident_points;
     if (p.feature.b0_reference) { 
-        incident_points = edge_points(p.feature.b1_face, s1.extents, vvm::rotate(t1.angle), p1);
+        incident_points = edge_points(p.feature.b1_face, e1, vvm::rotate(t1.angle), p1);
     } else {
-        incident_points = edge_points(p.feature.b0_face, s0.extents, vvm::rotate(t0.angle), p0);
+        incident_points = edge_points(p.feature.b0_face, e0, vvm::rotate(t0.angle), p0);
     }
 
     real_t min, max;
@@ -278,14 +365,14 @@ static int find_contact_points(contact c[2], const collision_pair& p, const coll
         real_t pd0 = vvm::dot(p.tangent, p0);
         switch (p.feature.ref_axis) {
         case axis_id::x:
-            min = pd0 - s0.extents.y;
-            max = pd0 + s0.extents.y;
-            front = dot(axis, p0) + s0.extents.x;
+            min = pd0 - e0.y;
+            max = pd0 + e0.y;
+            front = dot(axis, p0) + e0.x;
             break;
         case axis_id::y:
-            min = pd0 - s0.extents.x;
-            max = pd0 + s0.extents.x;
-            front = dot(axis, p0) + s0.extents.y;
+            min = pd0 - e0.x;
+            max = pd0 + e0.x;
+            front = dot(axis, p0) + e0.y;
             break;
         }
     } else {
@@ -293,14 +380,14 @@ static int find_contact_points(contact c[2], const collision_pair& p, const coll
         real_t pd1 = vvm::dot(p.tangent, p1);
         switch (p.feature.ref_axis) {
         case axis_id::x:
-            min = pd1 - s1.extents.y;
-            max = pd1 + s1.extents.y;
-            front = dot(axis, p1) + s1.extents.x;
+            min = pd1 - e1.y;
+            max = pd1 + e1.y;
+            front = dot(axis, p1) + e1.x;
             break;
         case axis_id::y:
-            min = pd1 - s1.extents.x;
-            max = pd1 + s1.extents.x;
-            front = dot(axis, p1) + s1.extents.y;
+            min = pd1 - e1.x;
+            max = pd1 + e1.x;
+            front = dot(axis, p1) + e1.y;
             break;
         }
     }
@@ -321,7 +408,7 @@ static int find_contact_points(contact c[2], const collision_pair& p, const coll
     return num_out;
 }
 
-void broadphase::update(const std::vector<aabb>& aabbs) {
+void collision_world::impl::broad_phase() {
     
     // 2 axis sort-and-sweep
     static const auto compare_x = [] (const aabb& b0, const aabb& b1) {
@@ -334,142 +421,172 @@ void broadphase::update(const std::vector<aabb>& aabbs) {
 
     // for now, only worry about sorting along 1 axis
 
-    if (_sort_ids.size() != aabbs.size()) {
-        _sort_ids.resize(aabbs.size());
+    auto& d = broad_phase_data;
+
+    if (d.sort_ids.size() != aabbs.size()) {
+        d.sort_ids.resize(aabbs.size());
         for (auto i = 0u; i < aabbs.size(); ++i) {
-            _sort_ids[i] = i;
+            d.sort_ids[i] = i;
         }
     }
-    _sort_ids.resize(aabbs.size());
+    d.sort_ids.resize(aabbs.size());
 
     // sort a vector of ids by using a compare function on elements of another vector indexed by the ids
-    sort_mapped_ids(_sort_ids, aabbs, compare_x);
+    sort_mapped_ids(d.sort_ids, aabbs, compare_x);
 
-    _pairs.clear();
-    _intervals.clear();
+    d.pairs.clear();
+    d.intervals.clear();
 
     // iterate over the aabbs in sorted order, which is lowest to highest min x coord
     // keep track of the current min x coord, and maintain a list of indices of bodies whose max x
     // coord is at least as large as the current min x coord
     // each time a body is checked in sorted order, add a pair for each body in the active intervals list
-    for (auto id0 : _sort_ids) {
+    for (auto id0 : d.sort_ids) {
         // remove inactive intervals
         auto ni = 0u;
         const auto& b0 = aabbs[id0];
-        for (auto i = 0u; i < _intervals.size(); ++i) {
-            auto id1 = _intervals[i];
+        for (auto i = 0u; i < d.intervals.size(); ++i) {
+            auto id1 = d.intervals[i];
             const auto& b1 = aabbs[id1];
             if (b1.max_extent.x < b0.min_extent.x) {
                 continue;
             }
-            _intervals[ni++] = id1;
+            d.intervals[ni++] = id1;
         }
-        _intervals.resize(ni);
+        d.intervals.resize(ni);
 
         // test aabbs and add pairs
-        for (auto id1 : _intervals) {
+        for (auto id1 : d.intervals) {
             const auto& b1 = aabbs[id1];
             if (aabbs_intersect(b0, b1)) {
-                _pairs.push_back(id0 < id1 ? pair {id0, id1} : pair {id1, id0});
+                d.pairs.push_back(id0 < id1 ? std::pair {id0, id1} : std::pair {id1, id0});
             }
         }
 
-        _intervals.push_back(id0);
+        d.intervals.push_back(id0);
     }
 }
 
+static bool collide_box_box(const transform& t0, const transform& t1, const v2& e0, const v2& e1, collision_pair& p, contact c[2]) {
+    auto sat_result = box_box_sat(e0, e1, t0, t1);
+    if (sat_result.depth <= 0.0) {
+        p.normal = sat_result.normal;
+        p.depth = sat_result.depth;
+        if (sat_result.b0_reference) {
+            p.feature.b0_face = sat_result.reference_face;
+            p.feature.b1_face = find_incident(sat_result.normal, vvm::rotate(t1.angle));
+        } else {
+            p.feature.b1_face = sat_result.reference_face;
+            p.feature.b0_face = find_incident(-sat_result.normal, vvm::rotate(t0.angle));
+        }
+        p.feature.b0_reference = sat_result.b0_reference;
+        p.feature.ref_axis = sat_result.reference_axis;
+        p.tangent = {p.normal.y, -p.normal.x};
+        
+        p.num_contacts = box_box_contact_points(c, p, e0, e1, t0, t1);
+        
+        return true;
+    } 
+    return false;
+}
 
+void collision_world::impl::narrow_phase() {
+    auto& d = narrow_phase_data;
+    const auto& bd = broad_phase_data;
 
-void narrowphase::update(const std::vector<broadphase::pair>& bpairs, const std::vector<collision_shape>& shapes,
-        const std::vector<transform>& tfms, const std::vector<id_t>& shape_ids) {
-    _old_pairs = _pairs;
-    _pairs.clear();
-    _contacts.clear();
+    d.old_pairs = pairs;
+    
+    pairs.clear();
+    contacts.clear();
 
-    for (auto i = 0u; i < bpairs.size(); ++i) {
-        const auto& [i0, i1] = bpairs[i];
-        const auto& t0 = tfms[i0], & t1 = tfms[i1];
-        const auto& s0 = shapes[shape_ids[i0]], & s1 = shapes[shape_ids[i1]];
+    d.sort_ids.resize(bd.pairs.size());
+    for (auto i = 0u; i < bd.pairs.size(); ++i) {
+        d.sort_ids[i] = i;
+    }
 
-        auto sat_result = compute_sat(s0, s1, t0, t1);
-        if (sat_result.depth <= 0.0) {
-            collision_pair p;
-            p.i0 = i0;
-            p.i1 = i1;
-            p.normal = sat_result.normal;
-            p.depth = sat_result.depth;
-            if (sat_result.b0_reference) {
-                p.feature.b0_face = sat_result.reference_face;
-                p.feature.b1_face = find_incident(sat_result.normal, vvm::rotate(t1.angle));
-            } else {
-                p.feature.b1_face = sat_result.reference_face;
-                p.feature.b0_face = find_incident(-sat_result.normal, vvm::rotate(t0.angle));
-            }
-            p.feature.b0_reference = sat_result.b0_reference;
-            p.feature.ref_axis = sat_result.reference_axis;
-            p.tangent = {p.normal.y, -p.normal.x};
-            
+    // horrendous
+    std::map<std::pair<collision_shape::type, collision_shape::type>, std::pair<id_t, size_t>> fuck_map;
 
-            contact c[2];
-            p.num_contacts = find_contact_points(c, p, s0, s1, t0, t1);
+    const auto type_pair = [this] (const auto& pr) {
+        return std::pair {shape_types[shape_ids[pr.first]], shape_types[shape_ids[pr.second]]};
+    };
 
-            auto b0_points = edge_points(p.feature.b0_face, s0.extents, vvm::rotate(t0.angle), t0.position);
-            auto b1_points = edge_points(p.feature.b1_face, s1.extents, vvm::rotate(t1.angle), t1.position);
-            if (p.feature.b0_reference) {
-                p.reference_face_points[0] = b0_points.points[0];
-                p.reference_face_points[1] = b0_points.points[1];
-                p.incident_face_points[0] = b1_points.points[0];
-                p.incident_face_points[1] = b1_points.points[1];
-            } else {
-                p.reference_face_points[0] = b1_points.points[0];
-                p.reference_face_points[1] = b1_points.points[1];
-                p.incident_face_points[0] = b0_points.points[0];
-                p.incident_face_points[1] = b0_points.points[1];
-            }
+    std::sort(d.sort_ids.begin(), d.sort_ids.end(), [&,this] (id_t i0, id_t i1) {
+        return type_pair(bd.pairs[i0]) < type_pair(bd.pairs[i1]);
+    });
 
-            for (int j = 0; j < p.num_contacts; ++j) {
-                p.contact_ids[j] = (id_t) _contacts.size();
-                _contacts.push_back(c[j]);
-            }
-
-            _pairs.push_back(p);
+    // this seems bad.. should fix
+    for (auto i = 0u; i < d.sort_ids.size(); ++i) {
+        auto tp = type_pair(bd.pairs[d.sort_ids[i]]);
+        if (auto it = fuck_map.find(tp); it != fuck_map.end()) {
+            ++it->second.second;
+        } else {
+            fuck_map.insert({tp, {i, 1}});
         }
     }
+
+    for (const auto& [tp, ip] : fuck_map) {
+        const auto& [t0, t1] = tp;
+        const auto& [start_ind, num] = ip;
+        if (t0 == collision_shape::type::box && t1 == t0) {
+            collision_pair p;
+            contact c[2];
+            for (auto i = start_ind; i < start_ind + num; ++i) {
+                const auto& [i0, i1] = bd.pairs[d.sort_ids[i]];
+                const auto& e0 = box_extents[shape_data_id[shape_ids[i0]]];
+                const auto& e1 = box_extents[shape_data_id[shape_ids[i1]]];
+                if (collide_box_box(transforms[i0], transforms[i1], e0, e1, p, c)) {
+                    p.i0 = i0; p.i1 = i1;
+                    for (int j = 0; j < p.num_contacts; ++j) {
+                        p.contact_ids[j] = (id_t) contacts.size();
+                        contacts.push_back(c[j]);
+                    }
+                    pairs.push_back(p);
+                }
+            }
+        }
+    }
+}
+
+void collision_world::impl::update() {
+    // update aabbs
+    for (auto i = 0u; i < num_bodies; ++i) {
+        auto si = shape_ids[i];
+        auto sdi = shape_data_id[si];
+        // todo: iterate through all of each shape type at once, avoid switching for each body
+        switch (shape_types[si]) {
+        case collision_shape::type::box:
+            aabbs[i] = get_shape_aabb(box_extents[sdi], transforms[i]);
+            break;
+        case collision_shape::type::circle:
+            aabbs[i] = get_shape_aabb(v2(circle_radii[sdi]), transforms[i]);
+            break;
+        }
+    }
+
+    broad_phase();
+
+    narrow_phase();
 }
 
 void collision_world::update() {
-    // first update all aabbs
-    aabbs.resize(num_bodies);
-    for (auto i = 0u; i < num_bodies; ++i) {
-        aabbs[i] = get_shape_aabb(collision_shapes[shape_ids[i]], transforms[i]);
-    }
-    
-    // run broadphase
-    bp.update(aabbs);
-
-    // run narrow phase
-    np.update(bp.pairs(), collision_shapes, transforms, shape_ids);
+    _impl->update();
 }
 
 id_t collision_world::add_collision_shape(const collision_shape& shape) {
-    id_t id = collision_shapes.size();
-    collision_shapes.push_back(shape);
-    return id;
+    return _impl->add_collision_shape(shape);
 }
 
 id_t collision_world::add_collision_object(const collision_object& obj) {
-    assert(obj.shape_id < collision_shapes.size());
-    id_t id = num_bodies++;
-    transforms.push_back(obj.tfm);
-    shape_ids.push_back(obj.shape_id);
-    return id;
+    return _impl->add_collision_object(obj);
 }
 
-collision_world::collision_world() :
-    num_bodies(0) {
+collision_world::collision_world() {
+    _impl = new impl;
 }
 
 collision_world::~collision_world() {
+    delete _impl;
 }
 
 };  // namespace physics
