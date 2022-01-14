@@ -1,6 +1,7 @@
 #include "game.h"
 
 #include <iostream>
+#include <map>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -8,7 +9,9 @@
 #include <vvm/matrix_tfm.hpp>
 #include <vvm/string.hpp>
 
-#include "physics/physics.h"
+#include "ecs.h"
+#include "physics/collision.h"
+#include "physics/dynamics.h"
 #include "render/render.h"
 
 
@@ -16,6 +19,13 @@ struct keyboard_state {
     std::map<int, bool> key_down;
     std::map<int, bool> key_pressed;
 };
+
+template<typename T, std::enable_if_t<std::is_floating_point<T>::value, bool> = true>
+T random() {
+    return static_cast<T>(rand()) / static_cast<T>(RAND_MAX);
+}
+
+float randf() { return random<float>(); }
 
 class test_game : public game {
 
@@ -79,10 +89,8 @@ void test_game::init(GLFWwindow* window) {
     glfwSetKeyCallback(w, key_callback);
 
     // create some collision shapes
-    box_shape_id = pw.add_collision_shape({.extents = {0.5, 0.5}});
-    auto ground_shape_id = pw.add_collision_shape({.extents = {10, 1}});
-    auto table_shape_id = pw.add_collision_shape({.extents = {1.5, 0.05}});
-    auto table_leg_shape_id = pw.add_collision_shape({.extents = {0.15, 0.5}});
+    box_shape_id = pw.add_collision_shape(physics::box_collision_shape{.extents = {1, 1}});
+    auto ground_shape_id = pw.add_collision_shape(physics::box_collision_shape{.extents = {10, 1}});
 
     // 0 mass rigid bodies are static / kinematic: 1-way interaction with dynamic bodies
     player = em.create();
@@ -101,18 +109,18 @@ void test_game::init(GLFWwindow* window) {
     auto ground_rb_id = pw.add_rigid_body(create_rigid_body(0.0, {0, -4}, 0, ground_shape_id));
     rb_ids.insert(ground, ground_rb_id);
 
-    // add a table
-    auto table_leg1 = em.create();
-    auto table_leg1_rb_id = pw.add_rigid_body(create_rigid_body(1.0, {-1.4, -2.5}, 0, table_leg_shape_id));
-    rb_ids.insert(table_leg1, table_leg1_rb_id);
+    // // add a table
+    // auto table_leg1 = em.create();
+    // auto table_leg1_rb_id = pw.add_rigid_body(create_rigid_body(1.0, {-1.4, -2.5}, 0, table_leg_shape_id));
+    // rb_ids.insert(table_leg1, table_leg1_rb_id);
 
-    auto table_leg2 = em.create();
-    auto table_leg2_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 1.4, -2.5}, 0, table_leg_shape_id));
-    rb_ids.insert(table_leg2, table_leg2_rb_id);
+    // auto table_leg2 = em.create();
+    // auto table_leg2_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 1.4, -2.5}, 0, table_leg_shape_id));
+    // rb_ids.insert(table_leg2, table_leg2_rb_id);
     
-    auto table_top = em.create();
-    auto table_top_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 0.0, -1.95}, 0, table_shape_id));
-    rb_ids.insert(table_top, table_top_rb_id);
+    // auto table_top = em.create();
+    // auto table_top_rb_id = pw.add_rigid_body(create_rigid_body(1.0, { 0.0, -1.95}, 0, table_shape_id));
+    // rb_ids.insert(table_top, table_top_rb_id);
 }
 
 game::status test_game::update(float dt) {
@@ -139,13 +147,13 @@ game::status test_game::update(float dt) {
         pw.apply_impulse(rb_ids.get(player), vvm::normalize(move_dir) * 15.0f * dt, {0, 0});
 
     // if (!pause || ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 20);
-    if (!pause) pw.update(dt, 5);
-    else if (ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 5);
+    if (!pause) pw.update(dt);
+    // else if (ks.key_pressed[GLFW_KEY_R]) pw.step(1.0 / 60.0, 5);
 
     if (ks.key_pressed[GLFW_KEY_G]) {
-        auto rb = create_rigid_body(1, {0, 0}, (float) rand() / RAND_MAX, box_shape_id);
-        auto vela = (float) rand() / RAND_MAX;
-        rb.vel.linear = 10.f * (float) rand() / RAND_MAX * vvm::rotate(vela)[0];
+        auto rb = create_rigid_body(1, {0, 0}, randf(), box_shape_id);
+        auto vela = randf();
+        rb.vel.linear = 10.f * randf() * vvm::rotate(vela)[0];
         auto e = em.create();
         auto rbi = pw.add_rigid_body(rb);
         rb_ids.insert(e, rbi);
@@ -163,54 +171,54 @@ void test_game::render(uint32_t width, uint32_t height) {
     
     em.for_each([this] (ecs::entity e) {
         auto b = pw.get_rigid_body(rb_ids.get(e));
-        auto s = pw.get_collision_shape(b.shape_id);
+        auto s = pw.get_collision_shape<physics::box_collision_shape>(b.shape_id);
         r.draw_quad(2.f * s.extents, b.tfm.position, b.tfm.angle, {1, 1, 1});
     });
 
-    if (draw_extra) {
-        const auto& cw = pw.get_collision_world();
+    // if (draw_extra) {
+    //     const auto& cw = pw.get_collision_world();
 
-        for (const auto& pair : cw.get_narrowphase().pairs()) {
-            auto b0 = pw.get_rigid_body(pair.i0), b1 = pw.get_rigid_body(pair.i1);
-            auto s0 = pw.get_collision_shape(b0.shape_id), s1 = pw.get_collision_shape(b1.shape_id);
+    //     for (const auto& pair : cw.get_narrowphase().pairs()) {
+    //         auto b0 = pw.get_rigid_body(pair.i0), b1 = pw.get_rigid_body(pair.i1);
+    //         auto s0 = pw.get_collision_shape(b0.shape_id), s1 = pw.get_collision_shape(b1.shape_id);
         
         
-            r.draw_line(pair.incident_face_points[0], pair.incident_face_points[1], {0, 1, 1});
-            r.draw_line(pair.reference_face_points[0], pair.reference_face_points[1], {0, 0, 1});
+    //         r.draw_line(pair.incident_face_points[0], pair.incident_face_points[1], {0, 1, 1});
+    //         r.draw_line(pair.reference_face_points[0], pair.reference_face_points[1], {0, 0, 1});
             
 
-            vvm::v2f p1, p2;
-            if (pair.feature.b0_reference) {
-                switch (pair.feature.ref_axis) {
-                case physics::axis_id::x:
-                    p1 = b0.tfm.position + pair.normal * s0.extents.x;
-                    break;
-                case physics::axis_id::y:
-                    p1 = b0.tfm.position + pair.normal * s0.extents.y;
-                    break;
-                }
-                p2 = p1 + pair.normal;
-            } else {
-                switch (pair.feature.ref_axis) {
-                case physics::axis_id::x:
-                    p1 = b1.tfm.position - pair.normal * s1.extents.x;
-                    break;
-                case physics::axis_id::y:
-                    p1 = b1.tfm.position - pair.normal * s1.extents.y;
-                    break;
-                }
-                p2 = p1 - pair.normal;
-            }
+    //         vvm::v2f p1, p2;
+    //         if (pair.feature.b0_reference) {
+    //             switch (pair.feature.ref_axis) {
+    //             case physics::axis_id::x:
+    //                 p1 = b0.tfm.position + pair.normal * s0.extents.x;
+    //                 break;
+    //             case physics::axis_id::y:
+    //                 p1 = b0.tfm.position + pair.normal * s0.extents.y;
+    //                 break;
+    //             }
+    //             p2 = p1 + pair.normal;
+    //         } else {
+    //             switch (pair.feature.ref_axis) {
+    //             case physics::axis_id::x:
+    //                 p1 = b1.tfm.position - pair.normal * s1.extents.x;
+    //                 break;
+    //             case physics::axis_id::y:
+    //                 p1 = b1.tfm.position - pair.normal * s1.extents.y;
+    //                 break;
+    //             }
+    //             p2 = p1 - pair.normal;
+    //         }
 
-            auto color = pair.num_contacts > 0 ? vvm::v3f(1, 0, 0) : vvm::v3f(0, 1, 0);
-            r.draw_line(p1, p2, color);
+    //         auto color = pair.num_contacts > 0 ? vvm::v3f(1, 0, 0) : vvm::v3f(0, 1, 0);
+    //         r.draw_line(p1, p2, color);
 
-            for (int i = 0; i < pair.num_contacts; ++i) {
-                auto p = cw.get_narrowphase().contacts()[pair.contact_ids[i]].position;
-                r.draw_filled_quad({0.1, 0.1}, p, 0, {1, 0, 1});
-            }
-        }
-    }
+    //         for (int i = 0; i < pair.num_contacts; ++i) {
+    //             auto p = cw.get_narrowphase().contacts()[pair.contact_ids[i]].position;
+    //             r.draw_filled_quad({0.1, 0.1}, p, 0, {1, 0, 1});
+    //         }
+    //     }
+    // }
     
 
     

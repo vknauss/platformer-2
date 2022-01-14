@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "types.h"
+#include "collision_shape.h"
 
 
 namespace physics {
@@ -10,15 +12,6 @@ namespace physics {
 struct collision_object {
     transform tfm;
     id_t shape_id;
-};
-
-class collision_shape {
-public:
-    enum class type {
-        circle, box
-    };
-
-    virtual type get_type() const = 0;
 };
 
 enum class axis_id : uint8_t {
@@ -57,23 +50,23 @@ struct contact {
     contact_feature feature;
 };
 
-class box_collision_shape : public collision_shape {
-public:
-    type get_type() const override {
-        return type::box;
-    }
+// class box_collision_shape : public collision_shape {
+// public:
+//     type get_type() const override {
+//         return type::box;
+//     }
 
-    v2 extents;
-};
+//     v2 extents;
+// };
 
-class circle_collision_shape : public collision_shape {
-public:
-    type get_type() const override {
-        return type::circle;
-    }
+// class circle_collision_shape : public collision_shape {
+// public:
+//     type get_type() const override {
+//         return type::circle;
+//     }
 
-    real_t radius;
-};
+//     real_t radius;
+// };
 
 class collision_world {
 public:
@@ -83,9 +76,19 @@ public:
 
     void update();
 
-    id_t add_collision_shape(const collision_shape& shape);
+    template<typename collision_shape_t>
+    id_t add_collision_shape(const collision_shape_t& shape);
 
     id_t add_collision_object(const collision_object& obj);
+
+    collision_object get_collision_object(id_t id) const;
+
+    template<typename collision_shape_t>
+    collision_world get_collision_shape(id_t id) const;
+
+    const std::vector<collision_pair>& get_pairs() const;
+
+    const std::vector<contact>& get_contacts() const;
 
 private:
 

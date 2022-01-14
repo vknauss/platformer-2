@@ -51,7 +51,7 @@ static constexpr aabb get_shape_aabb(const v2& extents, const transform& t) {
 class collision_world::impl {
 public:
     // shapes' data
-    std::vector<collision_shape::type> shape_types;
+    std::vector<collision_shape_type::id> shape_types;
     std::vector<id_t> shape_data_id;
     std::vector<v2> box_extents;
     std::vector<real_t> circle_radii;
@@ -80,17 +80,19 @@ public:
 
     // methods
 
-    id_t add_collision_shape(const collision_shape& shape) {
+    template<typename collision_shape_t>
+    id_t add_collision_shape(const collision_shape_t& shape) {
         id_t id = (id_t) shape_types.size();
-        shape_types.push_back(shape.get_type());
-        switch (shape.get_type()) {
-        case collision_shape::type::circle: {
+        auto type = collision_shape_type::get<collision_shape_t>();
+        shape_types.push_back(type);
+        switch (type) {
+        case collision_shape_type::id::circle: {
             auto cshape = static_cast<const circle_collision_shape*>(&shape);
             shape_data_id.push_back((id_t) circle_radii.size());
             circle_radii.push_back(cshape->radius);
             break;
         }
-        case collision_shape::type::box: {
+        case collision_shape_type::id::box: {
             auto bshape = static_cast<const box_collision_shape*>(&shape);
             shape_data_id.push_back((id_t) box_extents.size());
             box_extents.push_back(bshape->extents);
@@ -105,10 +107,10 @@ public:
         transforms.push_back(obj.tfm);
         shape_ids.push_back(obj.shape_id);
         switch (shape_types[obj.shape_id]) {
-        case collision_shape::type::box:
+        case collision_shape_type::id::box:
             aabbs.push_back(get_shape_aabb(box_extents[shape_data_id[obj.shape_id]], obj.tfm));
             break;
-        case collision_shape::type::circle:
+        case collision_shape_type::id::circle:
             aabbs.push_back(get_shape_aabb(v2(circle_radii[shape_data_id[obj.shape_id]]), obj.tfm));
             break;
         }
@@ -505,7 +507,7 @@ void collision_world::impl::narrow_phase() {
     }
 
     // horrendous
-    std::map<std::pair<collision_shape::type, collision_shape::type>, std::pair<id_t, size_t>> fuck_map;
+    std::map<std::pair<collision_shape_type::id, collision_shape_type::id>, std::pair<id_t, size_t>> fuck_map;
 
     const auto type_pair = [this] (const auto& pr) {
         return std::pair {shape_types[shape_ids[pr.first]], shape_types[shape_ids[pr.second]]};
@@ -528,7 +530,7 @@ void collision_world::impl::narrow_phase() {
     for (const auto& [tp, ip] : fuck_map) {
         const auto& [t0, t1] = tp;
         const auto& [start_ind, num] = ip;
-        if (t0 == collision_shape::type::box && t1 == t0) {
+        if (t0 == collision_shape_type::id::box && t1 == t0) {
             collision_pair p;
             contact c[2];
             for (auto i = start_ind; i < start_ind + num; ++i) {
@@ -555,10 +557,10 @@ void collision_world::impl::update() {
         auto sdi = shape_data_id[si];
         // todo: iterate through all of each shape type at once, avoid switching for each body
         switch (shape_types[si]) {
-        case collision_shape::type::box:
+        case collision_shape_type::id::box:
             aabbs[i] = get_shape_aabb(box_extents[sdi], transforms[i]);
             break;
-        case collision_shape::type::circle:
+        case collision_shape_type::id::circle:
             aabbs[i] = get_shape_aabb(v2(circle_radii[sdi]), transforms[i]);
             break;
         }
@@ -573,7 +575,8 @@ void collision_world::update() {
     _impl->update();
 }
 
-id_t collision_world::add_collision_shape(const collision_shape& shape) {
+template<typename collision_shape_t>
+id_t collision_world::add_collision_shape(const collision_shape_t& shape) {
     return _impl->add_collision_shape(shape);
 }
 

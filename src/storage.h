@@ -14,9 +14,12 @@ public:
 
     static constexpr id_t id_null = std::numeric_limits<id_t>::max();
 
-    void resize(size_t size);
+    void resize(std::size_t size);
 
     void assign(const std::vector<mapped_t>& data);
+
+    template<typename other_t, typename transform_t>
+    void assign(const std::vector<other_t>& others, const transform_t& transform);
 
     void push_back(const mapped_t& element);
 
@@ -36,7 +39,7 @@ public:
 
 
 template<typename mapped_t, typename id_t>
-void mapped_storage<mapped_t, id_t>::resize(size_t size) {
+void mapped_storage<mapped_t, id_t>::resize(std::size_t size) {
     auto oldsize = _data.size();
     _data.resize(size);
     _ids.resize(size);
@@ -53,6 +56,11 @@ void mapped_storage<mapped_t, id_t>::assign(const std::vector<mapped_t>& data) {
     for (auto i = oldsize; i < _ids.size(); ++i) {
         _ids[i] = i;
     }
+}
+
+template<typename other_t, typename transform_t>
+void assign(const std::vector<other_t>& others, const transform_t& transform) {
+
 }
 
 template<typename mapped_t, typename id_t>

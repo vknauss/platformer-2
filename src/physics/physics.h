@@ -19,49 +19,6 @@ namespace physics {
 
 
 
-struct contact_constraint {
-    id_t i0, i1;
-    contact c;
-    v2 r0, r1;
-    real_t impulse_normal, impulse_tangent;
-    real_t mass_normal, mass_tangent;
-};
-
-struct contact_solver_pair {
-    id_t i0, i1;
-    id_t contact_ids[2];
-    int num_contacts;
-    v2 normal, tangent;
-    real_t friction;
-};
-
-class contact_solver {
-    real_t allowed_penetration = 0.01, bias = 0.1;
-
-    std::vector<contact_constraint> ccs;
-    std::vector<contact_solver_pair> sps;
-    std::vector<contact_constraint> oldccs;
-    std::vector<contact_solver_pair> oldsps;
-    std::vector<id_t> sort_ids;
-
-public:
-
-    void update_constraints(const std::vector<collision_pair>& ps,
-                            const std::vector<contact>& cs,
-                            const std::vector<transform>& tfm,
-                            const std::vector<real_t>& im,
-                            const std::vector<real_t>& ii,
-                            const std::vector<real_t>& friction);
-
-    void apply_impulses(const std::vector<real_t>& im,
-                        const std::vector<real_t>& ii,
-                        std::vector<velocity>& vels);
-
-    void solve(const std::vector<real_t>& im, 
-               const std::vector<real_t>& ii,
-               real_t dt,
-               std::vector<velocity>& vels);
-};
 
 class dynamics_world {
 
